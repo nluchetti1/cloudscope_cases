@@ -1,0 +1,10 @@
+numpy
+scipy
+requests
+pygrib
+matplotlib
+cartopy
+Pillow
+netCDF4
+arm_pyart
+pandas
