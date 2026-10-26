@@ -1,1 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudScope — Case studies</title>
+<style>
+  :root{--bg:#111a25;--panel:#18222f;--line:#2a3746;--ink:#e8eef3;--steel:#8fa3b6;--dim:#5d6f80;
+        --red:#e5484d;--yellow:#f2c14e;--clear:#244a3a;--lwo:#7c8cff;--accent:#5aa9e6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline;padding:14px 18px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:24px;letter-spacing:.01em} h1 span{color:var(--steel);font-weight:500}
+  .tag{color:var(--steel);font-size:13px;flex:1 1 420px}
+  .bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line)}
+  button,.btn,select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+  button.on{background:#25374a;border-color:var(--accent)}
+  input[type=search]{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;width:100%}
+  .note{color:var(--steel);font-size:12.5px}
+  .wrap{display:grid;grid-template-columns:330px minmax(0,1fr);min-height:calc(100vh - 110px)}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+  aside{border-right:1px solid var(--line);padding:10px;overflow:auto;max-height:calc(100vh - 110px)}
+  .filters{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
+  .case{padding:7px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .case:hover{background:var(--panel)} .case.sel{border-color:var(--accent);background:var(--panel)}
+  .case b{font-weight:600} .case small{color:var(--steel);display:block}
+  .chip{display:inline-block;font-size:11px;padding:0 6px;border-radius:9px;margin-left:4px;background:#2a3746;color:var(--steel)}
+  .chip.r{background:#4a2224;color:#ffc2c3} .chip.l{background:#2b2f5a;color:#c9cfff}
+  main{padding:14px 18px;min-width:0}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  h2{margin:0 0 6px;font-size:18px} h3{margin:0 0 8px;font-size:15px}
+  .lanes{overflow-x:auto} svg text{fill:var(--steel);font-size:11px}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--steel);margin-top:6px}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px}
+  table{border-collapse:collapse;width:100%;font-size:13px} th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right}
+  th:first-child,td:first-child{text-align:left} th{color:var(--steel);font-weight:500}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+  .muted{color:var(--dim)} .hidden{display:none}
+  .dis{cursor:pointer} .dis:hover{background:#1e2b3a}
+  dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;margin:0} dt{color:var(--steel)}
+</style>
+</head>
+<body>
+<header>
+  <h1>CloudScope <span>Case studies</span></h1>
+  <div class="tag">Every logged countdown since Oct 2020, replayed every 2 minutes through the radar
+    algorithm — MRMS alone and the KMLB hybrid — with the same rules as the climatologies.</div>
+</header>
+<div class="bar">
+  <span>Radar:</span>
+  <button id="m-mrms" class="on">MRMS</button><button id="m-kmlb">KMLB hybrid</button>
+  <label class="btn">Load LWO workbook<input id="wb" type="file" accept=".xlsx,.xlsm" hidden></label>
+  <span id="wbnote" class="note">Loaded on this computer only — nothing is uploaded.</span>
+  <span style="flex:1"></span>
+  <button id="v-case" class="on">Case</button><button id="v-stats">Statistics</button>
+</div>
+<div class="wrap">
+  <aside>
+    <input id="q" type="search" placeholder="Search payload, vehicle, date…">
+    <div class="filters">
+      <select id="f-year"><option value="">All years</option></select>
+      <select id="f-out"><option value="">All outcomes</option><option value="1">Launched</option><option value="0">Scrubbed / delayed</option><option value="t">Tests</option></select>
+    </div>
+    <div id="count" class="note"></div>
+    <div id="list"></div>
+  </aside>
+  <main>
+    <section id="case-view">
+      <div class="panel"><div id="case-head" class="note">Loading cases…</div></div>
+      <div class="panel"><h3>Rules through the countdown <span class="note">(2-minute frames, UTC)</span></h3>
+        <div class="lanes" id="lanes"></div>
+        <div class="legend"><span><i style="background:var(--red)"></i>Violating</span><span><i style="background:var(--yellow)"></i>Watch</span>
+          <span><i style="background:var(--clear)"></i>Clear</span><span><i style="background:var(--lwo)"></i>LWO logged violation</span>
+          <span>Shaded: the hour before the countdown window · dashed line: window end (T-0 when launched)</span></div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><h3>Frame</h3><div id="frame" class="note">Click a cell in the lanes.</div></div>
+        <div class="panel"><h3>This countdown</h3><div id="score" class="note">Load the LWO workbook to compare.</div>
+          <p><button id="csv">Download CSV</button></p></div>
+      </div>
+    </section>
+    <section id="stats-view" class="hidden">
+      <div class="panel"><h3>Field-mill threshold</h3>
+        <input id="thr" type="range" min="500" max="1500" step="50" value="1000"> <b id="thrv">1000</b> V/m
+        <span class="note"> — the standard is 1,000 V/m. The 1-minute archive peaks slightly below what
+          the LWO logged in some episodes; move this to see the effect.</span></div>
+      <div id="stats" class="panel note">Load the LWO workbook to see statistics.</div>
+    </section>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const RULES = [
+  {key: "lightning", label: "Lightning", bits: ["lightning"], lwo: /lightning/i},
+  {key: "cumulus", label: "Cumulus", bits: ["cumulus_through", "cumulus_5nm", "cumulus_10nm"], lwo: /cumulus/i},
+  {key: "attached", label: "Attached anvil", bits: ["attached_anvil"], lwo: /attached/i},
+  {key: "detached", label: "Detached anvil", bits: ["detached_anvil"], lwo: /detached/i},
+  {key: "thick", label: "Thick layer", bits: ["thick_layer"], lwo: /thick/i},
+  {key: "fieldmill", label: "Field mill", fm: true, lwo: /electric/i},
+];
+const NOT_EVALUATED = /debris|disturbed|smoke|tribo|pcpn|precip|solar/i;
+let IDX = null, SUM = {}, CASE = null, LWO = null, MODE = "mrms", THR = 1000, SEL = null;
+const utc = s => Date.parse(String(s).replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? "" : "Z"));
+const hhmm = ms => new Date(ms).toISOString().slice(11, 16);
+const ymd = ms => new Date(ms).toISOString().slice(0, 10);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
+// ---- algorithm per frame -----------------------------------------------------------------
+function bitsOf(rule) { return (rule.bits || []).map(b => IDX.rule_keys.indexOf(b)).filter(b => b >= 0); }
+function algoRed(row, fm5, rule) {           // row = [status, red, yellow]
+  if (rule.fm) return fm5 != null && fm5 >= THR;
+  return bitsOf(rule).some(b => (row[1] >> b) & 1);
+}
+function algoYel(row, fm7, rule) {
+  if (rule.fm) return fm7 != null && fm7 >= THR;
+  return bitsOf(rule).some(b => (row[2] >> b) & 1);
+}
+
+// ---- the LWO workbook, read locally --------------------------------------------------------
+function excelUTC(v) {                       // Excel serial (naive UTC in this log) -> ms
+  if (typeof v === "number") return Math.round((v - 25569) * 86400000);
+  if (v instanceof Date) return v.getTime();
+  const t = utc(v); return isNaN(t) ? null : t;
+}
+function parseWorkbook(buf) {
+  const wb = XLSX.read(buf, {type: "array", cellDates: false});
+  const sh = wb.Sheets["LLCC Violation Data"];
+  if (!sh) throw new Error("no 'LLCC Violation Data' sheet");
+  const rows = XLSX.utils.sheet_to_json(sh, {header: 1, raw: true, blankrows: true});
+  const hr = rows.findIndex(r => r && r.filter(x => /^start$/i.test(String(x).trim())).length >= 3);
+  if (hr < 0) throw new Error("no Start / End header row");
+  const eps = {};
+  rows[hr].forEach((x, c) => {
+    if (!/^start$/i.test(String(x).trim())) return;
+    let name = null;
+    for (let r = hr - 1; r >= 0 && !name; r--) if (rows[r] && rows[r][c]) name = String(rows[r][c]).trim();
+    name = name || `column ${c}`;
+    const list = [];
+    for (let r = hr + 1; r < rows.length; r++) {
+      const s = excelUTC(rows[r] && rows[r][c]), e = excelUTC(rows[r] && rows[r][c + 1]);
+      if (s != null && e != null && e >= s) list.push([s, e]);
+    }
+    eps[name] = list;
+  });
+  return eps;
+}
+function lwoFor(rule) {                      // episodes for a rule (by its LWO column name)
+  if (!LWO) return null;
+  const k = Object.keys(LWO).find(n => rule.lwo.test(n));
+  return k ? LWO[k] : [];
+}
+const covers = (eps, t) => eps.some(([s, e]) => s <= t && t <= e);
+const overlaps = (eps, a, b) => eps.some(([s, e]) => s <= b && e >= a);
+
+// ---- list ----------------------------------------------------------------------------------
+function caseLWORules(c) {
+  if (!LWO) return [];
+  const a = utc(c.start), b = utc(c.end);
+  return RULES.filter(r => overlaps(lwoFor(r), a, b)).map(r => r.label);
+}
+function renderList() {
+  const q = $("q").value.toLowerCase(), y = $("f-year").value, o = $("f-out").value;
+  const rows = IDX.cases.filter(c => (!q || `${c.payload} ${c.vehicle} ${c.start}`.toLowerCase().includes(q))
+    && (!y || c.start.startsWith(y))
+    && (!o || (o === "t" ? !c.pad : o === "1" ? c.launched : (c.pad && !c.launched))));
+  $("count").textContent = `${rows.length} of ${IDX.cases.length} countdowns`;
+  $("list").innerHTML = rows.map(c => {
+    const lw = caseLWORules(c);
+    return `<div class="case${c.id === SEL ? " sel" : ""}" data-id="${c.id}"><b>${esc(c.payload)}</b>
+      <span class="chip">${esc(c.pad || "test")}</span>${c.launched ? "" : `<span class="chip">${c.pad ? "no launch" : "test"}</span>`}
+      ${lw.map(l => `<span class="chip l">${esc(l)}</span>`).join("")}
+      <small>${esc(c.vehicle)} · ${c.start.slice(0, 16).replace("T", " ")}Z – ${c.end.slice(11, 16)}Z</small></div>`;
+  }).join("");
+  [...$("list").querySelectorAll(".case")].forEach(el => el.onclick = () => openCase(el.dataset.id));
+}
+
+// ---- one case -----------------------------------------------------------------------------
+async function openCase(id) {
+  SEL = id; renderList();
+  const r = await fetch(`data/cases/${id}.json`);
+  CASE = await r.json();
+  renderCase();
+}
+function series(c, mode) {                   // countdown pad, per frame: row + field mills
+  const p = c.pads.indexOf(c.pad_scored || "LC-39A");
+  return c[mode].map((f, i) => ({row: [f.status[p], f.red[p], f.yel[p]], cls: f.cls[p], fm5: c.fm5[i][p], fm7: c.fm7[i][p]}));
+}
+function renderCase() {
+  const c = CASE, a = utc(c.start), b = utc(c.end);
+  $("case-head").innerHTML = `<h2>${esc(c.payload)} <span class="note">${esc(c.vehicle)}</span></h2>
+    ${ymd(a)} · window ${hhmm(a)}–${hhmm(b)}Z · pad ${esc(c.pad || "test countdown — scored at LC-39A")}
+    ${c.pad_scored && c.pad_scored !== c.pad ? `(scored at ${esc(c.pad_scored)})` : ""} ·
+    ${c.launched ? "launched at the window end" : (c.pad ? "no launch on this count" : "test")}
+    ${c.skipped.length ? ` · <span style="color:var(--yellow)">${c.skipped.length} frame(s) missing data</span>` : ""}`;
+  const T = c.frames.map(utc), S = {mrms: series(c, "mrms"), kmlb: series(c, "kmlb")};
+  const cw = Math.max(5, Math.min(12, Math.floor(1100 / T.length))), lx = 130, rh = 14;
+  const modes = MODE === "both" ? ["mrms", "kmlb"] : [MODE];
+  const rowsPer = (LWO ? 1 : 0) + modes.length;
+  let y = 18, svg = "";
+  const x = i => lx + i * cw;
+  // time axis
+  for (let i = 0; i < T.length; i++) if (new Date(T[i]).getUTCMinutes() % 30 === 0)
+    svg += `<text x="${x(i)}" y="12">${hhmm(T[i])}</text><line x1="${x(i)}" x2="${x(i)}" y1="14" y2="2000" stroke="#2a3746"/>`;
+  const iw = T.findIndex(t => t >= a);
+  if (iw > 0) svg += `<rect x="${lx}" y="14" width="${iw * cw}" height="2000" fill="#000" opacity=".18"/>`;
+  const all = [{key: "status", label: "Overall"}].concat(RULES);
+  for (const rule of all) {
+    svg += `<text x="0" y="${y + 11}" style="fill:var(--ink)">${rule.label}</text>`;
+    if (LWO && rule.key !== "status") {
+      const eps = lwoFor(rule);
+      for (let i = 0; i < T.length; i++) if (covers(eps, T[i]))
+        svg += `<rect x="${x(i)}" y="${y}" width="${cw - 1}" height="${rh - 2}" fill="var(--lwo)"><title>LWO ${rule.label}</title></rect>`;
+      svg += `<text x="${lx - 34}" y="${y + 10}">LWO</text>`; y += rh;
+    } else if (LWO) { svg += `<text x="${lx - 34}" y="${y + 10}">LWO</text>`; y += rh; }
+    for (const m of modes) {
+      for (let i = 0; i < T.length; i++) {
+        const s = S[m][i];
+        const red = rule.key === "status" ? s.row[0] === 2 : algoRed(s.row, s.fm5, rule);
+        const yel = rule.key === "status" ? s.row[0] === 1 : algoYel(s.row, s.fm7, rule);
+        const col = red ? "var(--red)" : yel ? "var(--yellow)" : "var(--clear)";
+        svg += `<rect class="cell" data-i="${i}" data-m="${m}" x="${x(i)}" y="${y}" width="${cw - 1}" height="${rh - 2}" fill="${col}"/>`;
+      }
+      svg += `<text x="${lx - 34}" y="${y + 10}">${m === "mrms" ? "MRMS" : "KMLB"}</text>`; y += rh;
+    }
+    y += 6;
+  }
+  const xe = lx + (T.findIndex(t => t >= b) >= 0 ? T.findIndex(t => t >= b) : T.length) * cw;
+  svg += `<line x1="${xe}" x2="${xe}" y1="14" y2="${y}" stroke="#e8eef3" stroke-dasharray="3 3"/>`;
+  $("lanes").innerHTML = `<svg width="${lx + T.length * cw + 10}" height="${y}">${svg}</svg>`;
+  [...$("lanes").querySelectorAll(".cell")].forEach(el => el.onclick = () => showFrame(+el.dataset.i, el.dataset.m));
+  renderScore();
+}
+function showFrame(i, m) {
+  const c = CASE, p = c.pads.indexOf(c.pad_scored || "LC-39A"), f = c[m][i], t = utc(c.frames[i]);
+  const red = c.rule_keys.filter((k, b) => (f.red[p] >> b) & 1), yel = c.rule_keys.filter((k, b) => (f.yel[p] >> b) & 1);
+  const ki = c.kmlb_info[i];
+  const lw = LWO ? RULES.filter(r => covers(lwoFor(r), t)).map(r => r.label) : null;
+  $("frame").innerHTML = `<dl><dt>Time</dt><dd>${hhmm(t)}Z ${ymd(t)} (${m === "mrms" ? "MRMS" : "KMLB hybrid"})</dd>
+    <dt>Status</dt><dd>${["Clear", "Watch", "Violating"][f.status[p]]}</dd>
+    <dt>Rules</dt><dd>${red.map(esc).join(", ") || "none"}${yel.length ? ` · watch: ${yel.map(esc).join(", ")}` : ""}</dd>
+    <dt>Field mills</dt><dd>${c.fm5[i][p] < 0 ? "no reading" : c.fm5[i][p] + " V/m"} within 5 nmi, ${c.fm7[i][p] < 0 ? "–" : c.fm7[i][p] + " V/m"} within 7, last 15 min</dd>
+    <dt>Cloud class</dt><dd>${f.cls[p]}</dd>
+    <dt>KMLB</dt><dd>${ki[0] ? `${esc(ki[0])}, to ${ki[1]}° (${esc(ki[3])}, ${ki[2] ?? "–"} km over LC-39A)` : "no volume"}</dd>
+    <dt>GLM</dt><dd>${c.glm[i] ? "complete" : "incomplete – NLDN only"}</dd>
+    ${lw ? `<dt>LWO</dt><dd>${lw.length ? lw.map(esc).join(", ") : "no logged violation"}</dd>` : ""}</dl>`;
+}
+function renderScore() {
+  const c = CASE;
+  if (!LWO) { $("score").innerHTML = "Load the LWO workbook to compare."; return; }
+  const a = utc(c.start), b = utc(c.end), T = c.frames.map(utc), S = series(c, MODE);
+  const rows = RULES.map(r => {
+    const eps = lwoFor(r), inw = T.map((t, i) => [t, i]).filter(([t]) => t >= a && t <= b);
+    const L = overlaps(eps, a, b), A = inw.some(([t, i]) => algoRed(S[i].row, S[i].fm5, r));
+    let both = 0, lo = 0, ao = 0;
+    for (const [t, i] of inw) { const l = covers(eps, t), al = algoRed(S[i].row, S[i].fm5, r); both += l && al; lo += l && !al; ao += al && !l; }
+    return `<tr><td>${r.label}</td><td>${L ? "yes" : "–"}</td><td>${A ? "yes" : "–"}</td><td>${both * 2}</td><td>${lo * 2}</td><td>${ao * 2}</td></tr>`;
+  }).join("");
+  const ne = Object.keys(LWO).filter(n => NOT_EVALUATED.test(n) && overlaps(LWO[n], a, b));
+  $("score").innerHTML = `<table><tr><th>Rule</th><th>LWO</th><th>Algorithm</th><th>min both</th><th>LWO only</th><th>algo only</th></tr>${rows}</table>
+    ${ne.length ? `<p class="note">LWO also logged (not evaluated by the algorithm): ${ne.map(esc).join(", ")}</p>` : ""}`;
+}
+function downloadCSV() {
+  if (!CASE) return;
+  const c = CASE, p = c.pads.indexOf(c.pad_scored || "LC-39A");
+  const head = ["time_utc", "in_window"].concat(...["mrms", "kmlb"].map(m => [`${m}_status`, `${m}_rules`])).concat(["fm5_vm", "fm7_vm"]);
+  const a = utc(c.start), b = utc(c.end);
+  const lines = c.frames.map((t, i) => [t, +(utc(t) >= a && utc(t) <= b)].concat(...["mrms", "kmlb"].map(m =>
+    [c[m][i].status[p], c.rule_keys.filter((k, bb) => (c[m][i].red[p] >> bb) & 1).join("|")])).concat([c.fm5[i][p], c.fm7[i][p]]).join(","));
+  const blob = new Blob([head.join(",") + "\n" + lines.join("\n")], {type: "text/csv"});
+  const el = document.createElement("a"); el.href = URL.createObjectURL(blob); el.download = `${c.id}.csv`; el.click();
+}
+
+// ---- statistics across all countdowns -------------------------------------------------------
+function computeStats(mode) {
+  const out = {}, dis = [], scrub = {red: 0, n: 0};
+  for (const r of RULES) out[r.key] = {cd: [0, 0, 0, 0], fr: [0, 0, 0, 0], lag: []};   // a b c d
+  for (const c of IDX.cases) {
+    const s = SUM[c.id]; if (!s || !c.pad) continue;
+    const a = utc(c.start), b = utc(c.end), T = s.m.map(m => a + m * 60000);
+    let disagree = 0;
+    for (const r of RULES) {
+      const eps = lwoFor(r), st = out[r.key];
+      let L = false, A = false, firstA = null;
+      for (let i = 0; i < T.length; i++) {
+        if (T[i] < a || T[i] > b) continue;
+        const l = covers(eps, T[i]), al = algoRed(s[mode][i], s.fm5[i], r);
+        L = L || l; A = A || al; if (al && firstA == null) firstA = T[i];
+        st.fr[l ? (al ? 0 : 2) : (al ? 1 : 3)]++;
+        disagree += (l !== al);
+      }
+      L = L || overlaps(eps, a, b);
+      st.cd[L ? (A ? 0 : 2) : (A ? 1 : 3)]++;
+      if (L && A) {
+        const fs = Math.min(...eps.filter(([x, y]) => x <= b && y >= a).map(([x]) => x));
+        st.lag.push((firstA - Math.max(fs, a)) / 60000);
+      }
+    }
+    if (!c.launched) { scrub.n++; const last = s[mode][s[mode].length - 1]; scrub.red += last && last[0] === 2; }
+    if (disagree) dis.push([disagree * 2, c]);
+  }
+  dis.sort((x, y) => y[0] - x[0]);
+  return {out, dis, scrub};
+}
+function scores([a, b, c, d]) {
+  const n = a + b + c + d, po = n ? (a + d) / n : 0;
+  const pe = n ? ((a + b) * (a + c) + (c + d) * (b + d)) / (n * n) : 0;
+  const f = x => isFinite(x) ? x.toFixed(2) : "–";
+  return {pod: f(a / (a + c)), far: f(b / (a + b)), csi: f(a / (a + b + c)), agree: n ? (100 * po).toFixed(0) + "%" : "–",
+          kappa: f((po - pe) / (1 - pe))};
+}
+function median(v) { if (!v.length) return "–"; const s = [...v].sort((x, y) => x - y); return s[Math.floor(s.length / 2)].toFixed(0); }
+function renderStats() {
+  if (!LWO) { $("stats").innerHTML = "Load the LWO workbook to see statistics."; return; }
+  const R = {mrms: computeStats("mrms"), kmlb: computeStats("kmlb")}, M = R[MODE];
+  const row = (r, k) => {
+    const s = R[k].out[r.key], cs = scores(s.cd), fs = scores(s.fr);
+    return `<td>${s.cd[0]}/${s.cd[2]}/${s.cd[1]}</td><td>${cs.pod}</td><td>${cs.far}</td><td>${fs.csi}</td><td>${fs.kappa}</td><td>${median(s.lag)}</td>`;
+  };
+  $("stats").innerHTML = `
+    <h3>Agreement with the LWO, by rule</h3>
+    <p class="note">Countdown level: did the LWO log, and the algorithm show, a violation at any point in the
+      countdown window (hits / LWO-only / algorithm-only)? POD = share of the LWO's violating countdowns the
+      algorithm also flagged; FAR = share of the algorithm's that the LWO did not log. Frame level: every
+      2-minute frame in the window - CSI and Cohen's kappa. Onset: algorithm's first red frame minus the LWO's
+      first logged start (minutes; negative = algorithm earlier).</p>
+    <table><tr><th rowspan="2">Rule</th><th colspan="6">MRMS</th><th colspan="6">KMLB hybrid</th></tr>
+      <tr>${["countdowns", "POD", "FAR", "frame CSI", "kappa", "onset"].map(h => `<th>${h}</th>`).join("").repeat(2)}</tr>
+      ${RULES.map(r => `<tr><td>${r.label}</td>${row(r, "mrms")}${row(r, "kmlb")}</tr>`).join("")}</table>
+    <p class="note">Field mills scored at ${THR} V/m. Scrubbed or delayed counts with the algorithm violating at
+      the last frame (~T-0): MRMS ${R.mrms.scrub.red} of ${R.mrms.scrub.n}, hybrid ${R.kmlb.scrub.red} of ${R.kmlb.scrub.n}.</p>
+    <h3>Biggest disagreements (${MODE === "mrms" ? "MRMS" : "KMLB hybrid"})</h3>
+    <p class="note">Minutes in the window where the algorithm and the LWO disagree, summed over the evaluated rules. Click to open.</p>
+    <table><tr><th>Countdown</th><th>Date</th><th>Pad</th><th>Minutes disagreeing</th></tr>
+      ${M.dis.slice(0, 30).map(([mins, c]) => `<tr class="dis" data-id="${c.id}"><td>${esc(c.payload)}</td><td>${c.start.slice(0, 10)}</td><td>${esc(c.pad)}</td><td>${mins}</td></tr>`).join("")}</table>`;
+  [...$("stats").querySelectorAll(".dis")].forEach(el => el.onclick = () => { setView("case"); openCase(el.dataset.id); });
+}
+
+// ---- wiring --------------------------------------------------------------------------------
+function setMode(m) { MODE = m; ["mrms", "kmlb"].forEach(k => $("m-" + k).classList.toggle("on", k === m)); if (CASE) renderCase(); if (!$("stats-view").classList.contains("hidden")) renderStats(); }
+function setView(v) { $("case-view").classList.toggle("hidden", v !== "case"); $("stats-view").classList.toggle("hidden", v !== "stats");
+  $("v-case").classList.toggle("on", v === "case"); $("v-stats").classList.toggle("on", v === "stats"); if (v === "stats") renderStats(); }
+$("m-mrms").onclick = () => setMode("mrms"); $("m-kmlb").onclick = () => setMode("kmlb");
+$("v-case").onclick = () => setView("case"); $("v-stats").onclick = () => setView("stats");
+$("q").oninput = renderList; $("f-year").onchange = renderList; $("f-out").onchange = renderList;
+$("csv").onclick = downloadCSV;
+$("thr").oninput = e => { THR = +e.target.value; $("thrv").textContent = THR; renderStats(); if (CASE) renderCase(); };
+$("wb").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    LWO = parseWorkbook(await f.arrayBuffer());
+    const n = Object.values(LWO).reduce((s, l) => s + l.length, 0);
+    $("wbnote").textContent = `${f.name}: ${n} logged violation episodes, read on this computer.`;
+    renderList(); if (CASE) renderCase(); if (!$("stats-view").classList.contains("hidden")) renderStats();
+  } catch (err) { $("wbnote").textContent = `Could not read the workbook: ${err.message}`; }
+};
+async function boot() {
+  IDX = await (await fetch("data/index.json?" + Date.now())).json();
+  try { SUM = await (await fetch("data/summary.json?" + Date.now())).json(); } catch (e) { SUM = {}; }
+  const years = [...new Set(IDX.cases.map(c => c.start.slice(0, 4)))].sort();
+  $("f-year").innerHTML += years.map(y => `<option>${y}</option>`).join("");
+  renderList();
+  $("case-head").textContent = `${IDX.cases.length} countdowns replayed. Pick one on the left.`;
+  if (IDX.cases.length) openCase(IDX.cases[IDX.cases.length - 1].id);
+}
+boot().catch(e => { $("case-head").textContent = `Could not load the cases: ${e.message}`; });
+if (typeof module !== "undefined") module.exports = {parseWorkbook, computeStats, scores};
+</script>
+</body>
+</html>
