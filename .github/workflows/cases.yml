@@ -1,1 +1,126 @@
+name: CloudScope case replays
 
+# Replays every logged countdown window (countdown_pads.csv) every 2 minutes, MRMS and the KMLB
+# hybrid, and publishes the case-study page. One job per month of windows; months whose cases are
+# all published are skipped unless "rerun" is set.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "First month (YYYY-MM)"
+        default: "2020-10"
+      end:
+        description: "Last month (YYYY-MM)"
+        default: "2025-12"
+      rerun:
+        description: "Re-score months already published (e.g. after a classifier change)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      months: ${{ steps.p.outputs.months }}
+      count: ${{ steps.p.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        continue-on-error: true
+        with: { ref: gh-pages, path: site }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -q pandas
+      - id: p
+        env:
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          RERUN: ${{ inputs.rerun }}
+        run: |
+          python3 - <<'PY'
+          import glob, json, os, pandas as pd
+          W = pd.read_csv("countdown_pads.csv", parse_dates=["start"])
+          W = W[W.match.isin(["good", "test"])].drop_duplicates(subset=["start", "end", "payload", "pad"])
+          pad = W["pad"].where(W["pad"].notna(), "TEST").astype(str).str.replace("-", "")
+          W["id"] = W.start.dt.strftime("%Y%m%d_%H%M") + "_" + pad
+          W["ym"] = W.start.dt.strftime("%Y-%m")
+          have = {os.path.basename(f)[:-5] for f in glob.glob("site/data/cases/*.json")}
+          rerun = os.environ.get("RERUN", "false").lower() == "true"
+          W = W[(W.ym >= os.environ["START"]) & (W.ym <= os.environ["END"])]
+          out = sorted(ym for ym, g in W.groupby("ym") if rerun or not set(g["id"]) <= have)
+          print(f"{len(out)} month(s) to score: {out}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fp:
+              fp.write(f"months={json.dumps(out)}\ncount={len(out)}\n")
+          PY
+
+  score:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      # 8, not 20: a free account runs at most 20 jobs at once across ALL repos - leave room for
+      # the live pages' 5-minute jobs.
+      max-parallel: 8
+      matrix:
+        month: ${{ fromJson(needs.plan.outputs.months) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - name: Install eccodes (pygrib needs the C library)
+        timeout-minutes: 15
+        run: |
+          APT="-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get $APT update -qq &&
+            sudo timeout 240 apt-get $APT install -y -qq libeccodes0 libeccodes-dev && exit 0
+            echo "apt attempt $i failed or hung; retrying in 20 s"; sleep 20
+          done
+          exit 1
+      - run: pip install -r requirements.txt
+      - name: Static checks
+        run: python _checks.py cases_run.py && python _checks.py climo_run.py && python _checks.py kmlb_classify.py
+      - name: Replay ${{ matrix.month }}
+        run: python cases_run.py ${{ matrix.month }} --procs 4 --out out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cases-${{ matrix.month }}
+          path: out/*.json
+          retention-days: 7
+
+  publish:
+    needs: [plan, score]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        continue-on-error: true
+        with: { ref: gh-pages, path: site }
+      - run: mkdir -p site/data/cases out
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: { pattern: "cases-*", merge-multiple: true, path: out }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Merge
+        run: |
+          python cases_merge.py --inp out --site site
+          cp web/index.html site/index.html
+          touch site/.nojekyll
+      - name: Publish
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          cd site
+          rm -rf .git
+          git init -q && git checkout -q -b gh-pages
+          git add -A
+          git -c user.name="cloudscope-bot" -c user.email="actions@users.noreply.github.com" \
+            commit -qm "Case replays $(date -u '+%Y-%m-%d %H:%MZ')"
+          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
