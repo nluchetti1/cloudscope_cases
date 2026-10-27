@@ -1,0 +1,106 @@
+name: Radar replay
+
+# Builds the live-viewer radar replay for one case: one frame per KMLB volume across its LCC
+# evaluation window. Started by the case page's "Request radar replay" button, which opens a
+# pre-filled issue titled "Replay <case id>" - only issues opened by the repo owner run it - or by
+# hand from the Actions tab.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      case:
+        description: "Case id, e.g. 20210828_0537_LC39A"
+        required: true
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  replay:
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.issue.title, 'Replay ') && github.event.issue.user.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      case: ${{ steps.id.outputs.case }}
+    steps:
+      - id: id
+        env:
+          TITLE: ${{ github.event.issue.title }}
+          INPUT: ${{ inputs.case }}
+        run: |
+          C="${INPUT:-${TITLE#Replay }}"; C="$(printf '%s' "$C" | tr -d '[:space:]')"
+          if ! [[ "$C" =~ ^[0-9]{8}_[0-9]{4}_[A-Z0-9]+$ ]]; then echo "not a case id: '$C'"; exit 1; fi
+          echo "case=$C" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - name: Install eccodes (pygrib needs the C library)
+        timeout-minutes: 15
+        run: |
+          APT="-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get $APT update -qq &&
+            sudo timeout 240 apt-get $APT install -y -qq libeccodes0 libeccodes-dev && exit 0
+            echo "apt attempt $i failed or hung; retrying in 20 s"; sleep 20
+          done
+          exit 1
+      - run: pip install -r requirements.txt
+      - name: Static checks
+        run: python _checks.py replay_run.py && python _checks.py replay_engine/mrms_classify.py
+      - name: Build the replay
+        run: python replay_run.py "${{ steps.id.outputs.case }}" --out out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: replay-${{ steps.id.outputs.case }}
+          path: out/replay
+          retention-days: 3
+
+  publish:
+    needs: replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency: { group: gh-pages-publish, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        continue-on-error: true
+        with: { ref: gh-pages, path: site }
+      - uses: actions/download-artifact@v4
+        with: { name: "replay-${{ needs.replay.outputs.case }}", path: out/replay }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python replay_publish.py "${{ needs.replay.outputs.case }}" --inp out --site site && touch site/.nojekyll
+      - name: Publish
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          cd site
+          rm -rf .git
+          git init -q && git checkout -q -b gh-pages
+          git add -A
+          git -c user.name="cloudscope-bot" -c user.email="actions@users.noreply.github.com" \
+            commit -qm "Replay ${{ needs.replay.outputs.case }} $(date -u '+%Y-%m-%d %H:%MZ')"
+          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+  notify:
+    needs: [replay, publish]
+    if: always() && github.event_name == 'issues' && needs.replay.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N: ${{ github.event.issue.number }}
+          CASE: ${{ needs.replay.outputs.case }}
+          OK: ${{ needs.publish.result == 'success' }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$OK" = "true" ]; then
+            URL="https://$(echo "$OWNER" | tr 'A-Z' 'a-z').github.io/$REPO/replay/$CASE/"
+            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "Radar replay ready: $URL (Pages may take a minute or two to update)."
+            gh issue close "$N" -R "$GITHUB_REPOSITORY"
+          else
+            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "The replay failed - see $RUN"
+          fi
