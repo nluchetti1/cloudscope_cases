@@ -71,7 +71,7 @@
         <div class="lanes" id="lanes"></div>
         <div class="legend"><span><i style="background:var(--red)"></i>Violating</span><span><i style="background:var(--yellow)"></i>Watch</span>
           <span><i style="background:var(--clear)"></i>Clear</span><span><i style="background:var(--lwo)"></i>LWO logged violation</span>
-          <span>Shaded: the hour before the countdown window · dashed line: window end (T-0 when launched)</span></div>
+          <span>Blue line: LCC evaluation starts (the log's window start, ~T-2 h) · shaded: the hour before it, for context · dashed line: T-0 / window end</span></div>
       </div>
       <div class="grid2">
         <div class="panel"><h3>Frame</h3><div id="frame" class="note">Click a cell in the lanes.</div></div>
@@ -198,15 +198,21 @@ function renderCase() {
   const cw = Math.max(5, Math.min(12, Math.floor(1100 / T.length))), lx = 130, rh = 14;
   const modes = MODE === "both" ? ["mrms", "kmlb"] : [MODE];
   const rowsPer = (LWO ? 1 : 0) + modes.length;
-  let y = 18, svg = "";
+  let y = 34, svg = "";
   const x = i => lx + i * cw;
   // time axis
   for (let i = 0; i < T.length; i++) if (new Date(T[i]).getUTCMinutes() % 30 === 0)
     svg += `<text x="${x(i)}" y="12">${hhmm(T[i])}</text><line x1="${x(i)}" x2="${x(i)}" y1="14" y2="2000" stroke="#2a3746"/>`;
-  const iw = T.findIndex(t => t >= a);
-  if (iw > 0) svg += `<rect x="${lx}" y="14" width="${iw * cw}" height="2000" fill="#000" opacity=".18"/>`;
+  const iw = T.findIndex(t => t >= a), xs = lx + Math.max(iw, 0) * cw;
+  if (iw > 0) svg += `<rect x="${lx}" y="14" width="${iw * cw}" height="2000" fill="#000" opacity=".22"/>` +
+    `<text x="${lx + 4}" y="27" style="fill:var(--dim)">hour before LCC evaluation</text>`;
+  svg += `<line x1="${xs}" x2="${xs}" y1="14" y2="2000" stroke="var(--accent)" stroke-width="1.5"/>` +
+    `<text x="${xs + 4}" y="27" style="fill:var(--accent)">LCC evaluation starts ${hhmm(a)}Z (T-${Math.round((b - a) / 60000)} min)</text>`;
   const all = [{key: "status", label: "Overall"}].concat(RULES);
+  let band = 0;
   for (const rule of all) {
+    const gh = rowsPer * rh;                 // alternate bands so each rule's rows read as one group
+    if (band++ % 2 === 0) svg += `<rect x="0" y="${y - 3}" width="${lx + T.length * cw + 10}" height="${gh + 4}" fill="#ffffff" opacity=".035"/>`;
     svg += `<text x="0" y="${y + 11}" style="fill:var(--ink)">${rule.label}</text>`;
     if (LWO && rule.key !== "status") {
       const eps = lwoFor(rule);
@@ -224,10 +230,11 @@ function renderCase() {
       }
       svg += `<text x="${lx - 34}" y="${y + 10}">${m === "mrms" ? "MRMS" : "KMLB"}</text>`; y += rh;
     }
-    y += 6;
+    y += 12;
   }
   const xe = lx + (T.findIndex(t => t >= b) >= 0 ? T.findIndex(t => t >= b) : T.length) * cw;
-  svg += `<line x1="${xe}" x2="${xe}" y1="14" y2="${y}" stroke="#e8eef3" stroke-dasharray="3 3"/>`;
+  svg += `<line x1="${xe}" x2="${xe}" y1="14" y2="${y}" stroke="#e8eef3" stroke-dasharray="3 3"/>` +
+    `<text x="${xe - 4}" y="27" text-anchor="end" style="fill:var(--ink)">${c.launched ? "T-0 (launch)" : "window end"} ${hhmm(b)}Z</text>`;
   $("lanes").innerHTML = `<svg width="${lx + T.length * cw + 10}" height="${y}">${svg}</svg>`;
   [...$("lanes").querySelectorAll(".cell")].forEach(el => el.onclick = () => showFrame(+el.dataset.i, el.dataset.m));
   renderScore();
