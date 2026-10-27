@@ -36,11 +36,14 @@ def main():
         if c["pad_scored"] in c["pads"]:
             p = c["pads"].index(c["pad_scored"])
             summary[c["id"]] = {"m": mins,
-                                "mrms": [[f["status"][p], f["red"][p], f["yel"][p]] for f in c["mrms"]],
-                                "kmlb": [[f["status"][p], f["red"][p], f["yel"][p]] for f in c["kmlb"]],
+                                # [status, red bits, yellow bits, 9 feature bytes] - the features let the
+                                # page pick the most likely cloud and flag close calls across all cases
+                                "mrms": [[f["status"][p], f["red"][p], f["yel"][p]] + f["feat"][p] for f in c["mrms"]],
+                                "kmlb": [[f["status"][p], f["red"][p], f["yel"][p]] + f["feat"][p] for f in c["kmlb"]],
                                 "fm5": [x[p] for x in c["fm5"]], "fm7": [x[p] for x in c["fm7"]]}
     rk = json.load(open(glob.glob(os.path.join(cdir, "*.json"))[0]))["rule_keys"] if index else []
-    meta = {"generated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "rule_keys": rk,
+    fn = json.load(open(glob.glob(os.path.join(cdir, "*.json"))[0]))["feat_names"] if index else []
+    meta = {"generated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "rule_keys": rk, "feat_names": fn,
             "step_min": 2, "pre_min": 60, "cases": index}
     json.dump(meta, open(os.path.join(a.site, "data", "index.json"), "w"), separators=(",", ":"))
     json.dump(summary, open(os.path.join(a.site, "data", "summary.json"), "w"), separators=(",", ":"))
