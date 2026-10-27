@@ -71,6 +71,7 @@
         <div class="lanes" id="lanes"></div>
         <div class="legend"><span><i style="background:var(--red)"></i>Violating</span><span><i style="background:var(--yellow)"></i>Watch</span>
           <span><i style="background:var(--clear)"></i>Clear</span><span><i style="background:var(--lwo)"></i>LWO logged violation</span>
+          <span><i style="background:var(--lwo);opacity:.35"></i>LWO: only rules the algorithm does not evaluate (Overall row)</span>
           <span>Blue line: LCC evaluation starts (the log's window start, ~T-2 h) · shaded: the hour before it, for context · dashed line: T-0 / window end</span></div>
       </div>
       <div class="grid2">
@@ -101,6 +102,10 @@ const RULES = [
   {key: "fieldmill", label: "Field mill", fm: true, lwo: /electric/i},
 ];
 const NOT_EVALUATED = /debris|disturbed|smoke|tribo|pcpn|precip|solar/i;
+// Overall: the algorithm violating on any evaluated rule (its status, plus field mills, which the
+// classifier's status leaves out) against the LWO logging any evaluated rule.
+const OVERALL = {key: "overall", label: "Overall", overall: true};
+const ALL_RULES = [OVERALL].concat(RULES);
 let IDX = null, SUM = {}, CASE = null, LWO = null, MODE = "mrms", THR = 1000, SEL = null;
 const utc = s => Date.parse(String(s).replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? "" : "Z"));
 const hhmm = ms => new Date(ms).toISOString().slice(11, 16);
@@ -110,10 +115,12 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", 
 // ---- algorithm per frame -----------------------------------------------------------------
 function bitsOf(rule) { return (rule.bits || []).map(b => IDX.rule_keys.indexOf(b)).filter(b => b >= 0); }
 function algoRed(row, fm5, rule) {           // row = [status, red, yellow]
+  if (rule.overall) return row[0] === 2 || (fm5 != null && fm5 >= THR);
   if (rule.fm) return fm5 != null && fm5 >= THR;
   return bitsOf(rule).some(b => (row[1] >> b) & 1);
 }
 function algoYel(row, fm7, rule) {
+  if (rule.overall) return row[0] === 1 || (fm7 != null && fm7 >= THR);
   if (rule.fm) return fm7 != null && fm7 >= THR;
   return bitsOf(rule).some(b => (row[2] >> b) & 1);
 }
@@ -148,6 +155,8 @@ function parseWorkbook(buf) {
 }
 function lwoFor(rule) {                      // episodes for a rule (by its LWO column name)
   if (!LWO) return null;
+  if (rule.overall) return RULES.flatMap(r => lwoFor(r));
+  if (rule.notEvaluated) return Object.keys(LWO).filter(n => NOT_EVALUATED.test(n)).flatMap(n => LWO[n]);
   const k = Object.keys(LWO).find(n => rule.lwo.test(n));
   return k ? LWO[k] : [];
 }
@@ -208,23 +217,26 @@ function renderCase() {
     `<text x="${lx + 4}" y="27" style="fill:var(--dim)">hour before LCC evaluation</text>`;
   svg += `<line x1="${xs}" x2="${xs}" y1="14" y2="2000" stroke="var(--accent)" stroke-width="1.5"/>` +
     `<text x="${xs + 4}" y="27" style="fill:var(--accent)">LCC evaluation starts ${hhmm(a)}Z (T-${Math.round((b - a) / 60000)} min)</text>`;
-  const all = [{key: "status", label: "Overall"}].concat(RULES);
+  const all = ALL_RULES, notEv = LWO ? lwoFor({notEvaluated: true}) : [];
   let band = 0;
   for (const rule of all) {
     const gh = rowsPer * rh;                 // alternate bands so each rule's rows read as one group
     if (band++ % 2 === 0) svg += `<rect x="0" y="${y - 3}" width="${lx + T.length * cw + 10}" height="${gh + 4}" fill="#ffffff" opacity=".035"/>`;
     svg += `<text x="0" y="${y + 11}" style="fill:var(--ink)">${rule.label}</text>`;
-    if (LWO && rule.key !== "status") {
+    if (LWO) {
       const eps = lwoFor(rule);
-      for (let i = 0; i < T.length; i++) if (covers(eps, T[i]))
-        svg += `<rect x="${x(i)}" y="${y}" width="${cw - 1}" height="${rh - 2}" fill="var(--lwo)"><title>LWO ${rule.label}</title></rect>`;
+      for (let i = 0; i < T.length; i++) {
+        if (covers(eps, T[i]))
+          svg += `<rect x="${x(i)}" y="${y}" width="${cw - 1}" height="${rh - 2}" fill="var(--lwo)"><title>LWO ${rule.label}</title></rect>`;
+        else if (rule.overall && covers(notEv, T[i]))
+          svg += `<rect x="${x(i)}" y="${y}" width="${cw - 1}" height="${rh - 2}" fill="var(--lwo)" opacity=".35"><title>LWO: a rule the algorithm does not evaluate</title></rect>`;
+      }
       svg += `<text x="${lx - 34}" y="${y + 10}">LWO</text>`; y += rh;
-    } else if (LWO) { svg += `<text x="${lx - 34}" y="${y + 10}">LWO</text>`; y += rh; }
+    }
     for (const m of modes) {
       for (let i = 0; i < T.length; i++) {
         const s = S[m][i];
-        const red = rule.key === "status" ? s.row[0] === 2 : algoRed(s.row, s.fm5, rule);
-        const yel = rule.key === "status" ? s.row[0] === 1 : algoYel(s.row, s.fm7, rule);
+        const red = algoRed(s.row, s.fm5, rule), yel = algoYel(s.row, s.fm7, rule);
         const col = red ? "var(--red)" : yel ? "var(--yellow)" : "var(--clear)";
         svg += `<rect class="cell" data-i="${i}" data-m="${m}" x="${x(i)}" y="${y}" width="${cw - 1}" height="${rh - 2}" fill="${col}"/>`;
       }
@@ -257,7 +269,7 @@ function renderScore() {
   const c = CASE;
   if (!LWO) { $("score").innerHTML = "Load the LWO workbook to compare."; return; }
   const a = utc(c.start), b = utc(c.end), T = c.frames.map(utc), S = series(c, MODE);
-  const rows = RULES.map(r => {
+  const rows = ALL_RULES.map(r => {
     const eps = lwoFor(r), inw = T.map((t, i) => [t, i]).filter(([t]) => t >= a && t <= b);
     const L = overlaps(eps, a, b), A = inw.some(([t, i]) => algoRed(S[i].row, S[i].fm5, r));
     let both = 0, lo = 0, ao = 0;
@@ -282,12 +294,12 @@ function downloadCSV() {
 // ---- statistics across all countdowns -------------------------------------------------------
 function computeStats(mode) {
   const out = {}, dis = [], scrub = {red: 0, n: 0};
-  for (const r of RULES) out[r.key] = {cd: [0, 0, 0, 0], fr: [0, 0, 0, 0], lag: []};   // a b c d
+  for (const r of ALL_RULES) out[r.key] = {cd: [0, 0, 0, 0], fr: [0, 0, 0, 0], lag: []};   // a b c d
   for (const c of IDX.cases) {
     const s = SUM[c.id]; if (!s || !c.pad) continue;
     const a = utc(c.start), b = utc(c.end), T = s.m.map(m => a + m * 60000);
     let disagree = 0;
-    for (const r of RULES) {
+    for (const r of ALL_RULES) {
       const eps = lwoFor(r), st = out[r.key];
       let L = false, A = false, firstA = null;
       for (let i = 0; i < T.length; i++) {
@@ -295,7 +307,7 @@ function computeStats(mode) {
         const l = covers(eps, T[i]), al = algoRed(s[mode][i], s.fm5[i], r);
         L = L || l; A = A || al; if (al && firstA == null) firstA = T[i];
         st.fr[l ? (al ? 0 : 2) : (al ? 1 : 3)]++;
-        disagree += (l !== al);
+        if (!r.overall) disagree += (l !== al);
       }
       L = L || overlaps(eps, a, b);
       st.cd[L ? (A ? 0 : 2) : (A ? 1 : 3)]++;
@@ -334,7 +346,7 @@ function renderStats() {
       first logged start (minutes; negative = algorithm earlier).</p>
     <table><tr><th rowspan="2">Rule</th><th colspan="6">MRMS</th><th colspan="6">KMLB hybrid</th></tr>
       <tr>${["countdowns", "POD", "FAR", "frame CSI", "kappa", "onset"].map(h => `<th>${h}</th>`).join("").repeat(2)}</tr>
-      ${RULES.map(r => `<tr><td>${r.label}</td>${row(r, "mrms")}${row(r, "kmlb")}</tr>`).join("")}</table>
+      ${ALL_RULES.map(r => `<tr${r.overall ? ' style="font-weight:600"' : ""}><td>${r.overall ? "Overall (go / no-go)" : r.label}</td>${row(r, "mrms")}${row(r, "kmlb")}</tr>`).join("")}</table>
     <p class="note">Field mills scored at ${THR} V/m. Scrubbed or delayed counts with the algorithm violating at
       the last frame (~T-0): MRMS ${R.mrms.scrub.red} of ${R.mrms.scrub.n}, hybrid ${R.kmlb.scrub.red} of ${R.kmlb.scrub.n}.</p>
     <h3>Biggest disagreements (${MODE === "mrms" ? "MRMS" : "KMLB hybrid"})</h3>
