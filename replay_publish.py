@@ -9,6 +9,8 @@ KEEP = 20                     # ~25 MB each; GitHub Pages sites should stay unde
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("case"); ap.add_argument("--inp", default="out"); ap.add_argument("--site", default="site")
+    ap.add_argument("--gr2-url", default="", help="the GR2 package's release URL (empty if its build failed)")
+    ap.add_argument("--gr2-partial", default="false")
     a = ap.parse_args()
     src, dst = os.path.join(a.inp, "replay", a.case), os.path.join(a.site, "replay", a.case)
     m = json.load(open(os.path.join(src, "manifest.json")))
@@ -20,6 +22,9 @@ def main():
     reg = json.load(open(path)) if os.path.exists(path) else {}
     reg[a.case] = {"frames": len(m["frames"]), "volumes": m["replay"]["volumes"],
                    "built": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")}
+    if a.gr2_url:
+        reg[a.case]["gr2"] = a.gr2_url
+        reg[a.case]["gr2_partial"] = a.gr2_partial == "true"
     for old in sorted(reg, key=lambda k: reg[k]["built"], reverse=True)[KEEP:]:
         shutil.rmtree(os.path.join(a.site, "replay", old), ignore_errors=True)
         del reg[old]

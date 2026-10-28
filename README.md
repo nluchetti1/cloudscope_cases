@@ -22,8 +22,10 @@ cloudscope_cases/
 ├── fieldmill/fieldmill_minutes.npz
 ├── requirements.txt, _checks.py
 ├── web/index.html             the case-study page
+├── web/label.html             the blind LWO answer sheet (…/cloudscope_cases/label.html)
 ├── replay_run.py              radar replay of one case (live-viewer frames, one per KMLB volume)
 ├── replay_publish.py          adds a replay to the site, keeps the newest 20
+├── case_window.py             a case's evaluation window, for the GR2 package
 ├── replay_engine/             the LIVE KMLB page's mrms_classify.py (v23) + kmlb_classify.py,
 │                              and viewer.html (the live page with a replay mode)
 ├── .github/workflows/cases.yml
@@ -37,7 +39,7 @@ cloudscope_cases/
 3. Settings -> Pages -> deploy from `gh-pages`; open the page, load the workbook, check CRS-23.
 4. Then start `2020-10`, end `2025-12`, rerun unchecked.
 
-## Radar replays
+## Radar replays and GR2 packages
 Each case has a "Request radar replay" button. It opens a pre-filled GitHub issue ("Replay <case
 id>"); submitting it runs .github/workflows/replay.yml (only for issues the repo owner opens), which
 rebuilds the case in the live KMLB viewer - maps, cross-sections, lightning, field-mill markers,
@@ -45,10 +47,26 @@ pad readouts - one frame per KMLB volume across the LCC evaluation window, from 
 link is posted on the issue (about 15 minutes), and the case page then shows "Open radar replay".
 The newest 20 replays are kept (~25 MB each). Also runnable from the Actions tab with a case id.
 
+The same request builds a GR2Analyst package for the case's LCC evaluation window with Launch Weather
+Replay by Brian Cizek (github.com/cyclonecizek/LaunchWeatherReplay, pinned to commit e7cf652 in
+replay.yml; used with his permission): KMLB Level II, MERLIN CG/CC with a 30-minute trail and field
+mills from the KSC Weather Archive, and the KXMR sounding's LLCC isotherms. It runs his builder on our
+runner - his server is not used - and keeps the ZIP as a release file (tag gr2-<case>); the case page
+shows "Download GR2 package" once both are built. A package missing a source is named -PARTIAL.
+To update his builder, change LWR_SHA in replay.yml after checking his changes.
+
 The replay uses the LIVE classifier (replay_engine/mrms_classify.py, v23); the case lanes use the
 climatologies' pinned v19. The cloud and anvil rules are the same in both; on the replay maps field
 mills are part of overall status, as on the live page. Isotherms come from the freezing level and
 a lapse rate (no historical BUFKIT); MERLIN has no archive before mid-2026.
+
+## Blind LWO evaluation
+`label.html` is an answer sheet for re-evaluating a case without seeing the algorithm or the log:
+one row per KMLB volume in the LCC evaluation window (the volume start times GR2 shows), with the
+rules called, the driving cloud, confidence and an optional range/azimuth from KMLB. Look at the
+case in GR2 (Launch Weather Replay packages radar, MERLIN lightning and field mills); record here.
+Work autosaves in the browser; "Export my sheet" downloads label_<case>_<initials>.json - the file
+that gets compared. Open the case page or the replay for a case only after exporting its sheet.
 
 ## Notes
 - Field mills: the rule is applied in the page from each pad's 15-minute peak |E|, so its threshold
