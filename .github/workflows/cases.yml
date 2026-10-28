@@ -116,6 +116,7 @@ jobs:
         run: |
           python cases_merge.py --inp out --site site
           cp web/index.html site/index.html
+          cp web/label.html site/label.html
           touch site/.nojekyll
       - name: Publish
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }

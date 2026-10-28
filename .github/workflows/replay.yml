@@ -1,9 +1,13 @@
 name: Radar replay
 
-# Builds the live-viewer radar replay for one case: one frame per KMLB volume across its LCC
-# evaluation window. Started by the case page's "Request radar replay" button, which opens a
-# pre-filled issue titled "Replay <case id>" - only issues opened by the repo owner run it - or by
-# hand from the Actions tab.
+# One case, two products, built in parallel:
+#   replay - the live KMLB viewer rebuilt from the archives, one frame per KMLB volume across the
+#            LCC evaluation window (published on this site under replay/<case>/)
+#   gr2    - a GR2Analyst package for the same window, built with Brian Cizek's Launch Weather Replay
+#            (pinned below, used with permission): KMLB Level II plus MERLIN and field-mill
+#            placefiles from the KSC Weather Archive; kept as a release file (gr2-<case>)
+# Started by the case page's "Request radar replay" button (an issue titled "Replay <case id>",
+# opened by the repo owner) or by hand from the Actions tab.
 on:
   issues:
     types: [opened]
@@ -17,13 +21,19 @@ permissions:
   contents: write
   issues: write
 
+env:
+  LWR_REPO: cyclonecizek/LaunchWeatherReplay
+  LWR_SHA: e7cf6520b7f56213fb00711cd688a6bd4e19b680      # 2026-09-24; bump deliberately
+
 jobs:
-  replay:
+  plan:
     if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.issue.title, 'Replay ') && github.event.issue.user.login == github.repository_owner)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
     outputs:
       case: ${{ steps.id.outputs.case }}
+      start: ${{ steps.win.outputs.start }}
+      end: ${{ steps.win.outputs.end }}
+      payload: ${{ steps.win.outputs.payload }}
     steps:
       - id: id
         env:
@@ -33,6 +43,18 @@ jobs:
           C="${INPUT:-${TITLE#Replay }}"; C="$(printf '%s' "$C" | tr -d '[:space:]')"
           if ! [[ "$C" =~ ^[0-9]{8}_[0-9]{4}_[A-Z0-9]+$ ]]; then echo "not a case id: '$C'"; exit 1; fi
           echo "case=$C" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -q pandas
+      - id: win
+        run: python case_window.py "${{ steps.id.outputs.case }}" >> "$GITHUB_OUTPUT"
+
+  replay:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: pip }
@@ -50,15 +72,81 @@ jobs:
       - name: Static checks
         run: python _checks.py replay_run.py && python _checks.py replay_engine/mrms_classify.py
       - name: Build the replay
-        run: python replay_run.py "${{ steps.id.outputs.case }}" --out out
+        run: python replay_run.py "${{ needs.plan.outputs.case }}" --out out
       - uses: actions/upload-artifact@v4
         with:
-          name: replay-${{ steps.id.outputs.case }}
+          name: replay-${{ needs.plan.outputs.case }}
           path: out/replay
           retention-days: 3
 
+  gr2:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      url: ${{ steps.release.outputs.url }}
+      partial: ${{ steps.release.outputs.partial }}
+    env:
+      NODE_USE_SYSTEM_CA: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.LWR_REPO }}", ref: "${{ env.LWR_SHA }}", path: lwr, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm, cache-dependency-path: lwr/package-lock.json }
+      - name: Install Launch Weather Replay
+        working-directory: lwr
+        run: npm ci --no-audit --no-fund
+      - name: Load the missing KSC intermediate certificate (validated against trusted roots)
+        working-directory: lwr
+        run: bash scripts/ksc-trust.sh
+      - name: Install siphon for the KXMR sounding
+        run: |
+          python3 -m venv "$RUNNER_TEMP/siphon"
+          "$RUNNER_TEMP/siphon/bin/pip" install --quiet siphon==0.11.0
+          echo "SOUNDING_PYTHON=$RUNNER_TEMP/siphon/bin/python" >> "$GITHUB_ENV"
+      - name: Build the GR2 package
+        id: scenario
+        working-directory: lwr
+        env:
+          SCENARIO_MODE: Weather scenario
+          SCENARIO_START: ${{ needs.plan.outputs.start }}
+          SCENARIO_END: ${{ needs.plan.outputs.end }}
+          SCENARIO_RADAR: KMLB
+          SCENARIO_WINDS: "false"            # towers: "temporarily unavailable" on his page
+          SCENARIO_FIELDMILLS: "true"
+          SCENARIO_MERLIN: "true"
+          SCENARIO_WIND_HEIGHT: "54"
+          SCENARIO_TRAIL: "30"               # rule 4.1.1 looks back 30 minutes
+          SCENARIO_ALLOW_PARTIAL: "true"     # a missing source is named in the file name and README
+        run: npm run scenario
+      - name: Keep it as a release file
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZIP: ${{ steps.scenario.outputs.archive }}
+          NAME: ${{ steps.scenario.outputs.filename }}
+          CASE: ${{ needs.plan.outputs.case }}
+          PAYLOAD: ${{ needs.plan.outputs.payload }}
+          START: ${{ needs.plan.outputs.start }}
+          END: ${{ needs.plan.outputs.end }}
+        run: |
+          FILE="GR2_${CASE}.zip"; case "$NAME" in *-PARTIAL.zip) FILE="GR2_${CASE}-PARTIAL.zip";; esac
+          cp "$ZIP" "$RUNNER_TEMP/$FILE"
+          TAG="gr2-$CASE"
+          NOTES="GR2Analyst package for $PAYLOAD, LCC evaluation $START-${END:11}Z: KMLB Level II with MERLIN (30-min trail) and field-mill placefiles. Built with Launch Weather Replay by Brian Cizek ($LWR_REPO@${LWR_SHA:0:7}), used with permission. Extract fully and read README.txt."
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete-asset "$TAG" "GR2_${CASE}.zip" -y -R "$GITHUB_REPOSITORY" 2>/dev/null || true
+            gh release delete-asset "$TAG" "GR2_${CASE}-PARTIAL.zip" -y -R "$GITHUB_REPOSITORY" 2>/dev/null || true
+            gh release upload "$TAG" "$RUNNER_TEMP/$FILE" --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$RUNNER_TEMP/$FILE" -R "$GITHUB_REPOSITORY" --title "GR2 package: $PAYLOAD ${START:0:10}" --notes "$NOTES"
+          fi
+          echo "url=https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$FILE" >> "$GITHUB_OUTPUT"
+          case "$FILE" in *-PARTIAL.zip) echo "partial=true";; *) echo "partial=false";; esac >> "$GITHUB_OUTPUT"
+
   publish:
-    needs: replay
+    needs: [plan, replay, gr2]
+    if: always() && needs.replay.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency: { group: gh-pages-publish, cancel-in-progress: false }
@@ -68,10 +156,13 @@ jobs:
         continue-on-error: true
         with: { ref: gh-pages, path: site }
       - uses: actions/download-artifact@v4
-        with: { name: "replay-${{ needs.replay.outputs.case }}", path: out/replay }
+        with: { name: "replay-${{ needs.plan.outputs.case }}", path: out/replay }
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: python replay_publish.py "${{ needs.replay.outputs.case }}" --inp out --site site && touch site/.nojekyll
+      - run: |
+          python replay_publish.py "${{ needs.plan.outputs.case }}" --inp out --site site \
+            --gr2-url "${{ needs.gr2.outputs.url }}" --gr2-partial "${{ needs.gr2.outputs.partial }}"
+          touch site/.nojekyll
       - name: Publish
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
@@ -80,27 +171,34 @@ jobs:
           git init -q && git checkout -q -b gh-pages
           git add -A
           git -c user.name="cloudscope-bot" -c user.email="actions@users.noreply.github.com" \
-            commit -qm "Replay ${{ needs.replay.outputs.case }} $(date -u '+%Y-%m-%d %H:%MZ')"
+            commit -qm "Replay ${{ needs.plan.outputs.case }} $(date -u '+%Y-%m-%d %H:%MZ')"
           git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
 
   notify:
-    needs: [replay, publish]
-    if: always() && github.event_name == 'issues' && needs.replay.result != 'skipped'
+    needs: [plan, replay, gr2, publish]
+    if: always() && github.event_name == 'issues' && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           N: ${{ github.event.issue.number }}
-          CASE: ${{ needs.replay.outputs.case }}
-          OK: ${{ needs.publish.result == 'success' }}
+          CASE: ${{ needs.plan.outputs.case }}
+          REPLAY_OK: ${{ needs.publish.result == 'success' }}
+          GR2_URL: ${{ needs.gr2.outputs.url }}
+          GR2_PARTIAL: ${{ needs.gr2.outputs.partial }}
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
         run: |
           RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if [ "$OK" = "true" ]; then
-            URL="https://$(echo "$OWNER" | tr 'A-Z' 'a-z').github.io/$REPO/replay/$CASE/"
-            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "Radar replay ready: $URL (Pages may take a minute or two to update)."
-            gh issue close "$N" -R "$GITHUB_REPOSITORY"
+          SITE="https://$(echo "$OWNER" | tr 'A-Z' 'a-z').github.io/$REPO"
+          B=""
+          if [ "$REPLAY_OK" = "true" ]; then B="Radar replay: $SITE/replay/$CASE/ (Pages may take a minute or two)"; else B="Radar replay: failed - see $RUN"; fi
+          if [ -n "$GR2_URL" ]; then
+            B="$B"$'\n'"GR2 package: $GR2_URL"
+            [ "$GR2_PARTIAL" = "true" ] && B="$B (PARTIAL - a source was unavailable; see README.txt in the ZIP)"
           else
-            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "The replay failed - see $RUN"
+            B="$B"$'\n'"GR2 package: failed - see $RUN"
           fi
+          B="$B"$'\n\n'"Case page: $SITE/#$CASE"
+          gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "$B"
+          if [ "$REPLAY_OK" = "true" ] && [ -n "$GR2_URL" ]; then gh issue close "$N" -R "$GITHUB_REPOSITORY"; fi
