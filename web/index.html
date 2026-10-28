@@ -351,13 +351,17 @@ function repoURL() {                         // nluchetti1.github.io/cloudscope_
 function replayButton(c) {
   if (!c.pad) return "";
   const r = REPLAYS[c.id];
-  if (r) return `<a class="btn" href="replay/${encodeURIComponent(c.id)}/" target="_top">Open radar replay (${r.frames} KMLB volumes)</a>`;
+  if (r) return `<a class="btn" href="replay/${encodeURIComponent(c.id)}/" target="_top">Open radar replay (${r.frames} KMLB volumes)</a> ` +
+    (r.gr2 ? `<a class="btn" href="${esc(r.gr2)}" title="GR2Analyst package: KMLB Level II, MERLIN and field mills (Launch Weather Replay by Brian Cizek)">` +
+             `Download GR2 package${r.gr2_partial ? " (partial)" : ""}</a>` : "");
   const body = `Builds the radar replay for ${c.payload} (${c.vehicle}, ${c.pad}), LCC evaluation ` +
-    `${c.start.slice(0, 16).replace("T", " ")}Z - ${c.end.slice(11, 16)}Z: one frame per KMLB volume, in the live viewer.\n\n` +
-    `Submit this issue as it is. The link is posted here when the replay is ready (about 15 minutes); ` +
-    `the case page then shows an "Open radar replay" button.`;
+    `${c.start.slice(0, 16).replace("T", " ")}Z - ${c.end.slice(11, 16)}Z: one frame per KMLB volume, in the live viewer, ` +
+    `and a GR2Analyst package for the same window (KMLB Level II, MERLIN lightning with a 30-minute trail, field mills; ` +
+    `built with Brian Cizek's Launch Weather Replay).\n\n` +
+    `Submit this issue as it is. Both links are posted here when they are ready (about 15-30 minutes); ` +
+    `the case page then shows "Open radar replay" and "Download GR2 package".`;
   const href = `${repoURL()}/issues/new?title=${encodeURIComponent("Replay " + c.id)}&body=${encodeURIComponent(body)}`;
-  return `<a class="btn" href="${href}" target="_blank" rel="noopener">Request radar replay</a>`;
+  return `<a class="btn" href="${href}" target="_blank" rel="noopener">Request radar replay + GR2 package</a>`;
 }
 function showFrame(i, m) {
   const c = CASE, p = c.pads.indexOf(c.pad_scored || "LC-39A"), f = c[m][i], t = utc(c.frames[i]);
