@@ -1,0 +1,33 @@
+{
+ "20220808_2057_LC39A": {
+  "frames": 60,
+  "volumes": 72,
+  "built": "2026-10-27T19:30Z"
+ },
+ "20220914_2348_SLC40": {
+  "frames": 7,
+  "volumes": 7,
+  "built": "2026-10-28T00:33Z"
+ },
+ "20211112_1041_SLC40": {
+  "frames": 14,
+  "volumes": 14,
+  "built": "2026-10-28T17:21Z",
+  "gr2": "https://github.com/nluchetti1/cloudscope_cases/releases/download/gr2-20211112_1041_SLC40/GR2_20211112_1041_SLC40.zip",
+  "gr2_partial": false
+ },
+ "20251217_1142_LC39A": {
+  "frames": 19,
+  "volumes": 19,
+  "built": "2026-10-29T13:53Z",
+  "gr2": "https://github.com/nluchetti1/cloudscope_cases/releases/download/gr2-20251217_1142_LC39A/GR2_20251217_1142_LC39A.zip",
+  "gr2_partial": false
+ },
+ "20210603_1529_LC39A": {
+  "frames": 20,
+  "volumes": 20,
+  "built": "2026-10-29T13:56Z",
+  "gr2": "https://github.com/nluchetti1/cloudscope_cases/releases/download/gr2-20210603_1529_LC39A/GR2_20210603_1529_LC39A.zip",
+  "gr2_partial": false
+ }
+}
