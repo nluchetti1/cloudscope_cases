@@ -5,60 +5,114 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CloudScope — LWO answer sheet</title>
 <style>
-  :root{--bg:#111a25;--panel:#18222f;--line:#2a3746;--ink:#e8eef3;--steel:#8fa3b6;--dim:#5d6f80;--accent:#5aa9e6;--on:#4a2224;--onink:#ffc2c3}
+  :root{--bg:#111a25;--panel:#18222f;--line:#2a3746;--ink:#e8eef3;--steel:#8fa3b6;--dim:#5d6f80;--accent:#5aa9e6;
+        --on:#4a2224;--onink:#ffc2c3;--both:#e5484d;--a:#f2994a;--b:#a78bfa;--none:#22303e;--flag:#f2c14e}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
   header{padding:14px 18px;border-bottom:1px solid var(--line)}
-  h1{margin:0;font-size:22px} h1 span{color:var(--steel);font-weight:500}
+  h1{margin:0;font-size:22px} h1 span{color:var(--steel);font-weight:500} h3{margin:0 0 8px;font-size:15px}
   .note{color:var(--steel);font-size:12.5px}
   .bar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line)}
-  select,input,button,textarea{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
-  button{cursor:pointer} button.primary{border-color:var(--accent);background:#1d3a55}
+  select,input,button,textarea,.btn{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+  button,.btn{cursor:pointer} button.primary{border-color:var(--accent);background:#1d3a55} button.on{border-color:var(--accent);background:#25374a}
   main{padding:14px 18px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
   table{border-collapse:collapse;width:100%;font-size:13px}
   th,td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:center;vertical-align:middle}
-  th{color:var(--steel);font-weight:500;position:sticky;top:0;background:var(--panel)}
-  td.t{text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap}
-  tr.pre td.t{color:var(--dim)}
+  th{color:var(--steel);font-weight:500;background:var(--panel)}
+  td.t,th.t{text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums}
   label.rule{display:inline-flex;align-items:center;justify-content:center;width:100%;height:24px;border-radius:4px;cursor:pointer}
   label.rule:has(input:checked){background:var(--on);color:var(--onink)}
   label.rule input{margin:0}
   td select,td input{padding:3px 4px;font-size:12.5px}
   td input.num{width:58px}
-  .wrap{overflow-x:auto}
-  .hidden{display:none}
+  tr.flag td{background:rgba(242,193,78,.08)} td.flag{outline:2px solid var(--flag);outline-offset:-2px}
+  tr.amb td{opacity:.55}
+  .both{font-size:11px;color:var(--flag);display:block;white-space:nowrap}
+  .wrap{overflow-x:auto} .hidden{display:none}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--steel);margin-top:6px}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px}
+  svg text{fill:var(--steel);font-size:11px}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+  .err{color:#ff8a8a}
 </style>
 </head>
 <body>
 <header>
   <h1>CloudScope <span>LWO answer sheet</span></h1>
-  <div class="note">Blind evaluation of a past countdown, one row per KMLB volume. Look at the case in GR2
-    (radar, lightning and field mills from Launch Weather Replay) and record your own calls here. This page
-    shows no algorithm output and no original log — please do not open the case page or the radar replay
-    for a case until you have exported your sheet for it.</div>
+  <div class="note">Blind evaluation of past countdowns, one row per KMLB volume. Look at the case in GR2 and record your
+    own calls here. Nothing on this page shows the algorithm or the original log — please do not open the case page or the
+    radar replay for a case until its final answer is exported.</div>
 </header>
 <div class="bar">
-  <label>Labeler <input id="who" placeholder="initials" size="6"></label>
-  <select id="case"><option value="">Choose a case…</option></select>
-  <span id="meta" class="note"></span>
+  <button id="t-label" class="on">1 · Label</button><button id="t-compare">2 · Compare the two LWOs</button><button id="t-final">3 · Final answer</button>
+  <span style="flex:1"></span><span id="meta" class="note"></span>
 </div>
 <main>
-  <div id="intro" class="panel note">Enter your initials and choose a case.</div>
-  <div id="sheet" class="hidden">
-    <div class="panel note" id="gr2"></div>
-    <div class="panel wrap">
-      <table id="tbl"></table>
+  <!-- ======================= 1. LABEL ======================= -->
+  <section id="v-label">
+    <div class="panel"><label>Labeler <input id="who" placeholder="initials" size="6"></label>
+      <select id="case"><option value="">Choose a case…</option></select></div>
+    <div id="intro" class="panel note">Enter your initials and choose a case.</div>
+    <div id="sheet" class="hidden">
+      <div class="panel note" id="gr2"></div>
+      <div class="panel wrap"><table id="tbl"></table></div>
+      <div class="panel">
+        <label class="note" for="notes">Notes on this case (anything the rows can't hold):</label>
+        <textarea id="notes" rows="3" style="width:100%;margin-top:6px"></textarea>
+        <p><button class="primary" id="export">Export my sheet (JSON)</button> <button id="csv">Export CSV</button>
+          <span id="saved" class="note"></span></p>
+        <p class="note">Your work is saved in this browser as you go. Exporting downloads <code>label_&lt;case&gt;_&lt;initials&gt;.json</code> — send that file in.</p>
+      </div>
     </div>
+  </section>
+
+  <!-- ======================= 2. COMPARE ======================= -->
+  <section id="v-compare" class="hidden">
     <div class="panel">
-      <label class="note" for="notes">Notes on this case (anything the rows can't hold):</label>
-      <textarea id="notes" rows="3" style="width:100%;margin-top:6px"></textarea>
-      <p><button class="primary" id="export">Export my sheet (JSON)</button> <button id="csv">Export CSV</button>
-        <span id="saved" class="note"></span></p>
-      <p class="note">Your work is saved in this browser as you go. Exporting downloads a file named
-        <code>label_&lt;case&gt;_&lt;initials&gt;.json</code> — send that file in; it is what gets compared.</p>
+      <h3>Load the two LWOs' sheets for one case</h3>
+      <p class="note">JSON or CSV exports from the Label tab, one per LWO. Both must be the same case.</p>
+      <p><label class="btn">LWO A sheet<input id="fa" type="file" accept=".json,.csv" hidden></label> <span id="na" class="note">none</span></p>
+      <p><label class="btn">LWO B sheet<input id="fb" type="file" accept=".json,.csv" hidden></label> <span id="nb" class="note">none</span></p>
+      <p id="cmpErr" class="err"></p>
     </div>
-  </div>
+    <div id="cmpOut" class="hidden">
+      <div class="panel"><h3>Agreement by rule <span class="note">(KMLB volumes in the evaluation window)</span></h3><div id="cmpTable"></div></div>
+      <div class="panel wrap"><h3>Through the countdown</h3><div id="cmpLanes"></div>
+        <div class="legend"><span><i style="background:var(--both)"></i>Both violating</span><span><i style="background:var(--a)"></i>Only A</span>
+          <span><i style="background:var(--b)"></i>Only B</span><span><i style="background:var(--none)"></i>Neither</span></div></div>
+      <div class="grid2">
+        <div class="panel"><h3>Cloud type</h3><div id="cmpCloud"></div></div>
+        <div class="panel"><h3>Volumes where they differ</h3><div id="cmpDiff" class="wrap"></div></div>
+      </div>
+      <p><button class="primary" id="toFinal">Start the final answer from these two sheets →</button></p>
+    </div>
+  </section>
+
+  <!-- ======================= 3. FINAL ======================= -->
+  <section id="v-final" class="hidden">
+    <div class="panel">
+      <h3>Final answer — the pair's agreed calls</h3>
+      <p class="note">Built from the two sheets loaded in Compare: volumes where they agreed are filled in; every
+        disagreement is outlined and shows both calls ("A: … / B: …") until you decide it. Mark a volume
+        <b>ambiguous</b> if you cannot agree — it is kept out of training. Or import a final answer exported earlier to keep working on it.</p>
+      <p><label class="btn">Import a final answer<input id="ff" type="file" accept=".json,.csv" hidden></label>
+        <label>Agreed by <input id="byw" placeholder="initials, e.g. AB/CD" size="12"></label>
+        <span id="fstat" class="note"></span></p>
+      <p id="finErr" class="err"></p>
+    </div>
+    <div id="finOut" class="hidden">
+      <div class="panel wrap"><table id="ftbl"></table></div>
+      <div class="panel">
+        <label class="note" for="fnotes">Notes on the final answer:</label>
+        <textarea id="fnotes" rows="3" style="width:100%;margin-top:6px"></textarea>
+        <p><button class="primary" id="fexport">Export final answer (JSON)</button> <button id="fcsv">Export CSV</button>
+          <span id="fsaved" class="note"></span></p>
+        <p class="note">The final JSON (<code>final_&lt;case&gt;.json</code>, schema cloudscope-final-v1) is the training input for
+          tuning the algorithm. Disagreements still undecided are exported as unresolved and left out of training.</p>
+      </div>
+    </div>
+  </section>
 </main>
 <script>
 "use strict";
@@ -69,61 +123,113 @@ const CLOUDS = ["", "Cumulus", "Cumulonimbus", "Attached anvil", "Detached anvil
                 "Layered / stratiform", "Disturbed weather", "Smoke plume", "Other"];
 const CONF = ["sure", "probable", "unsure"];
 const MID_MIN = 2.5;                         // KMLB scan midpoint ~ start + 2.5 min (as the replays)
-let IDX = null, C = null, ROWS = [];
+let IDX = null, C = null, ROWS = [], SA = null, SB = null, FIN = null;
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const utc = s => Date.parse(String(s).replace(" ", "T") + (/[zZ]$/.test(s) ? "" : "Z"));
 const hms = ms => new Date(ms).toISOString().slice(11, 19);
+const hm = ms => new Date(ms).toISOString().slice(11, 16);
+const ruleLabel = k => (RULES.find(r => r[0] === k) || [k, k])[1];
 
+// ---------------------------------------------------------------- shared: the volume table
 function volumesOf(c) {                     // KMLB volume start times in the window, from the case file's volume names
   const a = utc(c.start), b = utc(c.end), seen = new Map();
   for (const ki of c.kmlb_info || []) {
     const m = /(\d{8})_(\d{6})/.exec(ki && ki[0] || ""); if (!m) continue;
     const t = Date.UTC(+m[1].slice(0, 4), +m[1].slice(4, 6) - 1, +m[1].slice(6, 8), +m[2].slice(0, 2), +m[2].slice(2, 4), +m[2].slice(4, 6));
-    const mid = t + MID_MIN * 60000;
-    if (mid >= a && mid <= b) seen.set(t, String(ki[0]).replace(/\.gz$/, ""));
+    if (t + MID_MIN * 60000 >= a && t + MID_MIN * 60000 <= b) seen.set(t, String(ki[0]).replace(/\.gz$/, ""));
   }
   return [...seen.entries()].sort((x, y) => x[0] - y[0]).map(([t, name]) => ({t, name}));
 }
-const key = () => `cloudscope-label:${C.id}:${$("who").value.trim().toUpperCase()}`;
 function blankRow(v) { return {volume: v.name, start: new Date(v.t).toISOString().slice(0, 19) + "Z", rules: [], cloud: "", confidence: "", range_nm: "", az_deg: "", note: ""}; }
+// one table renderer for the Label and Final tabs; opts.final adds the ambiguous column and disagreement marks
+function tableHTML(rows, opts = {}) {
+  const head = `<tr><th class="t">Volume (UTC)</th>${RULES.map(([, l]) => `<th>${l}</th>`).join("")}<th>Cloud</th><th>Confidence</th>` +
+    `<th>Range nmi</th><th>Az °</th><th>Note</th>${opts.final ? "<th>Ambiguous</th>" : ""}<th></th></tr>`;
+  return head + rows.map((r, i) => {
+    const d = r._diff || {};
+    const cell = (k, inner) => `<td${d[k] ? ' class="flag"' : ""}>${inner}${d[k] ? `<span class="both">${esc(d[k])}</span>` : ""}</td>`;
+    return `<tr data-i="${i}" class="${Object.keys(d).length ? "flag" : ""} ${r.ambiguous ? "amb" : ""}"><td class="t">${hms(utc(r.start))}</td>` +
+      RULES.map(([k]) => cell("rule:" + k, `<label class="rule"><input type="checkbox" data-f="rule" data-k="${k}"${r.rules.includes(k) ? " checked" : ""}></label>`)).join("") +
+      cell("cloud", `<select data-f="cloud">${CLOUDS.map(c => `<option${c === r.cloud ? " selected" : ""}>${c}</option>`).join("")}</select>`) +
+      cell("confidence", `<select data-f="confidence"><option></option>${CONF.map(c => `<option${c === r.confidence ? " selected" : ""}>${c}</option>`).join("")}</select>`) +
+      `<td><input class="num" data-f="range_nm" value="${esc(r.range_nm)}" inputmode="decimal"></td>` +
+      `<td><input class="num" data-f="az_deg" value="${esc(r.az_deg)}" inputmode="numeric"></td>` +
+      `<td><input data-f="note" value="${esc(r.note)}" size="14"></td>` +
+      (opts.final ? `<td><input type="checkbox" data-f="ambiguous"${r.ambiguous ? " checked" : ""}></td>` : "") +
+      `<td>${i ? `<button data-f="same" title="Copy the row above">Same ↑</button>` : ""}</td></tr>`;
+  }).join("");
+}
+function editRows(rows, e, redraw, saveFn) {
+  const tr = e.target.closest("tr[data-i]"); if (!tr) return;
+  const r = rows[+tr.dataset.i], f = e.target.dataset.f; if (!f) return;
+  const decided = k => { if (r._diff) delete r._diff[k]; };
+  if (f === "rule") { r.rules = r.rules.filter(k => k !== e.target.dataset.k); if (e.target.checked) r.rules.push(e.target.dataset.k); decided("rule:" + e.target.dataset.k); }
+  else if (f === "ambiguous") r.ambiguous = e.target.checked;
+  else if (f === "same") { if (e.type !== "click") return;
+    const p = rows[+tr.dataset.i - 1]; Object.assign(r, {rules: [...p.rules], cloud: p.cloud, confidence: p.confidence, range_nm: p.range_nm, az_deg: p.az_deg}); r._diff = {}; redraw(); }
+  else { r[f] = e.target.value; decided(f); }
+  if (e.type === "change" && (f === "rule" || f === "cloud" || f === "confidence" || f === "ambiguous")) redraw();
+  saveFn();
+}
+function download(name, text, type) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click(); }
+function csvOf(meta, rows, extra = []) {
+  const head = ["case_id", "labeler", "volume", "start_utc"].concat(RULES.map(([k]) => k), ["cloud", "confidence", "range_nm", "az_deg", "note"], extra);
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  return head.join(",") + "\n" + rows.map(r => [meta.case_id, meta.labeler, r.volume, r.start].concat(RULES.map(([k]) => +r.rules.includes(k)),
+    [r.cloud, r.confidence, r.range_nm, r.az_deg, r.note], extra.map(x => typeof r[x] === "boolean" ? +r[x] : r[x])).map(q).join(",")).join("\n");
+}
 
+// ---------------------------------------------------------------- reading sheets (JSON or CSV)
+function parseCSV(text) {
+  const out = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { f += '"'; i++; } else if (ch === '"') q = false; else f += ch; }
+    else if (ch === '"') q = true; else if (ch === ",") { row.push(f); f = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(f); out.push(row); row = []; f = ""; }
+    else f += ch;
+  }
+  if (f !== "" || row.length) { row.push(f); out.push(row); }
+  return out.filter(r => r.some(x => x !== ""));
+}
+function readSheet(name, text) {             // -> {case_id, labeler, volumes:[...], notes}
+  if (/\.json$/i.test(name) || /^\s*\{/.test(text)) {
+    const s = JSON.parse(text);
+    if (!s.case_id || !Array.isArray(s.volumes)) throw new Error(`${name}: not a CloudScope sheet`);
+    s.volumes = s.volumes.map(v => ({...v, rules: v.rules || []}));
+    return s;
+  }
+  const rows = parseCSV(text), h = rows[0].map(x => x.trim()), ix = k => h.indexOf(k);
+  if (ix("case_id") < 0 || ix("volume") < 0) throw new Error(`${name}: CSV without case_id / volume columns`);
+  const vol = rows.slice(1).map(r => ({volume: r[ix("volume")], start: r[ix("start_utc")],
+    rules: RULES.map(([k]) => k).filter(k => ix(k) >= 0 && /^(1|true|yes|x)$/i.test(r[ix(k)])),
+    cloud: r[ix("cloud")] || "", confidence: r[ix("confidence")] || "", range_nm: r[ix("range_nm")] || "",
+    az_deg: r[ix("az_deg")] || "", note: r[ix("note")] || "",
+    ...(ix("ambiguous") >= 0 ? {ambiguous: /^(1|true)$/i.test(r[ix("ambiguous")])} : {}),
+    ...(ix("unresolved") >= 0 ? {unresolved: r[ix("unresolved")]} : {})}));
+  return {case_id: rows[1][ix("case_id")], labeler: rows[1][ix("labeler")] || name, volumes: vol, notes: ""};
+}
+async function readFile(input) { const f = input.files[0]; return f ? readSheet(f.name, await f.text()) : null; }
+
+// ---------------------------------------------------------------- 1. LABEL
+const key = () => `cloudscope-label:${C.id}:${$("who").value.trim().toUpperCase()}`;
+async function loadCase(id) { C = await (await fetch(`data/cases/${id}.json`)).json(); return C; }
 async function openCase(id) {
   if (!id) return;
-  C = await (await fetch(`data/cases/${id}.json`)).json();
-  const vols = volumesOf(C);
+  await loadCase(id);
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(key()) || "null"); } catch (e) { saved = null; }
-  ROWS = vols.map(v => (saved && saved.volumes || []).find(r => r.volume === v.name) || blankRow(v));
+  ROWS = volumesOf(C).map(v => (saved && saved.volumes || []).find(r => r.volume === v.name) || blankRow(v));
   $("notes").value = saved ? saved.notes || "" : "";
   $("meta").textContent = `${C.payload} · ${C.vehicle} · ${C.pad || "test"} · LCC evaluation ${C.start.slice(0, 16).replace("T", " ")}–${C.end.slice(11, 16)}Z · ${ROWS.length} KMLB volumes`;
-  $("gr2").innerHTML = `For Launch Weather Replay: start <b>${C.start.slice(0, 10)} ${C.start.slice(11, 16)}</b> UTC, end <b>${C.end.slice(0, 10)} ${C.end.slice(11, 16)}</b> UTC, radar KMLB.
+  $("gr2").innerHTML = `GR2 package window: <b>${C.start.slice(0, 10)} ${C.start.slice(11, 16)}</b> to <b>${C.end.slice(0, 10)} ${C.end.slice(11, 16)}</b> UTC, KMLB.
     Rows are KMLB volume start times — the times GR2 shows. Tick every rule you would call violated for that volume;
-    "cloud" is the cloud you judge to be driving the call; range and azimuth are from KMLB (GR2's cursor), optional.
+    "cloud" is the cloud you judge to be driving the call; range and azimuth from KMLB (GR2's cursor) are optional.
     <b>Same ↑</b> copies the row above.`;
   $("intro").classList.add("hidden"); $("sheet").classList.remove("hidden");
-  render();
+  renderLabel();
 }
-function render() {
-  const head = `<tr><th>Volume (UTC)</th>${RULES.map(([, l]) => `<th>${l}</th>`).join("")}<th>Cloud</th><th>Confidence</th><th>Range nmi</th><th>Az °</th><th>Note</th><th></th></tr>`;
-  $("tbl").innerHTML = head + ROWS.map((r, i) => `<tr data-i="${i}"><td class="t">${hms(utc(r.start))}</td>` +
-    RULES.map(([k]) => `<td><label class="rule"><input type="checkbox" data-f="rule" data-k="${k}"${r.rules.includes(k) ? " checked" : ""}></label></td>`).join("") +
-    `<td><select data-f="cloud">${CLOUDS.map(c => `<option${c === r.cloud ? " selected" : ""}>${c}</option>`).join("")}</select></td>` +
-    `<td><select data-f="confidence"><option></option>${CONF.map(c => `<option${c === r.confidence ? " selected" : ""}>${c}</option>`).join("")}</select></td>` +
-    `<td><input class="num" data-f="range_nm" value="${esc(r.range_nm)}" inputmode="decimal"></td>` +
-    `<td><input class="num" data-f="az_deg" value="${esc(r.az_deg)}" inputmode="numeric"></td>` +
-    `<td><input data-f="note" value="${esc(r.note)}" size="14"></td>` +
-    `<td>${i ? `<button data-f="same" title="Copy the row above">Same ↑</button>` : ""}</td></tr>`).join("");
-}
-function onEdit(e) {
-  const tr = e.target.closest("tr[data-i]"); if (!tr) return;
-  const r = ROWS[+tr.dataset.i], f = e.target.dataset.f;
-  if (f === "rule") { r.rules = r.rules.filter(k => k !== e.target.dataset.k); if (e.target.checked) r.rules.push(e.target.dataset.k); }
-  else if (f === "same" && e.type === "click") {
-    const p = ROWS[+tr.dataset.i - 1]; Object.assign(r, {rules: [...p.rules], cloud: p.cloud, confidence: p.confidence, range_nm: p.range_nm, az_deg: p.az_deg});
-    render();
-  } else if (f && f !== "same") r[f] = e.target.value;
-  save();
-}
+function renderLabel() { $("tbl").innerHTML = tableHTML(ROWS); }
 function sheet() {
   return {schema: "cloudscope-label-v1", case_id: C.id, payload: C.payload, vehicle: C.vehicle, pad: C.pad,
           window: [C.start, C.end], labeler: $("who").value.trim().toUpperCase(),
@@ -134,11 +240,158 @@ function save() {
   try { localStorage.setItem(key(), JSON.stringify(sheet())); $("saved").textContent = "Saved in this browser " + new Date().toLocaleTimeString(); }
   catch (e) { $("saved").textContent = "Could not save in this browser - export to keep your work."; }
 }
-function download(name, text, type) {
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click();
+
+// ---------------------------------------------------------------- 2. COMPARE
+function kappa(a, b, c, d) {                 // a both, b only A, c only B, d neither
+  const n = a + b + c + d; if (!n) return null;
+  const po = (a + d) / n, pe = ((a + b) * (a + c) + (c + d) * (b + d)) / (n * n);
+  return pe === 1 ? (po === 1 ? 1 : null) : (po - pe) / (1 - pe);
 }
-$("tbl").addEventListener("change", onEdit); $("tbl").addEventListener("input", onEdit); $("tbl").addEventListener("click", onEdit);
-$("notes").oninput = save;
+function pair() {                            // volumes in both sheets, by volume name, in time order
+  const mb = new Map(SB.volumes.map(v => [v.volume, v]));
+  return SA.volumes.filter(v => mb.has(v.volume)).map(v => [v, mb.get(v.volume)]).sort((x, y) => utc(x[0].start) - utc(y[0].start));
+}
+function compareStats() {
+  const P = pair(), out = {};
+  for (const [k] of RULES) {
+    let a = 0, b = 0, c = 0, d = 0, fa = null, la = null, fb = null, lb = null;
+    for (const [x, y] of P) {
+      const X = x.rules.includes(k), Y = y.rules.includes(k), t = utc(x.start);
+      if (X && Y) a++; else if (X) b++; else if (Y) c++; else d++;
+      if (X) { fa = fa ?? t; la = t; } if (Y) { fb = fb ?? t; lb = t; }
+    }
+    out[k] = {a, b, c, d, n: P.length, agree: P.length ? (a + d) / P.length : null, kappa: kappa(a, b, c, d), fa, la, fb, lb};
+  }
+  const cl = P.filter(([x, y]) => x.cloud && y.cloud), same = cl.filter(([x, y]) => x.cloud === y.cloud).length;
+  const conf = {}; for (const [x, y] of cl) if (x.cloud !== y.cloud) { const kk = `${x.cloud} / ${y.cloud}`; conf[kk] = (conf[kk] || 0) + 1; }
+  return {P, rules: out, cloud: {n: cl.length, same, conf}};
+}
+async function loadCompare() {
+  $("cmpErr").textContent = "";
+  try {
+    SA = await readFile($("fa")); SB = await readFile($("fb"));
+    $("na").textContent = SA ? `${SA.labeler} · ${SA.case_id} · ${SA.volumes.length} volumes` : "none";
+    $("nb").textContent = SB ? `${SB.labeler} · ${SB.case_id} · ${SB.volumes.length} volumes` : "none";
+    if (!SA || !SB) return;
+    if (SA.case_id !== SB.case_id) throw new Error(`The sheets are for different cases (${SA.case_id} / ${SB.case_id}).`);
+    if (String(SA.labeler).toUpperCase() === String(SB.labeler).toUpperCase()) throw new Error("Both sheets have the same labeler - load one sheet from each LWO.");
+    await loadCase(SA.case_id);
+    $("meta").textContent = `${C.payload} · ${C.vehicle} · ${C.pad} · ${SA.labeler} vs ${SB.labeler}`;
+    renderCompare();
+  } catch (err) { $("cmpErr").textContent = err.message; $("cmpOut").classList.add("hidden"); }
+}
+function renderCompare() {
+  const S = compareStats(), A = SA.labeler, B = SB.labeler, pct = x => x == null ? "–" : Math.round(100 * x) + "%";
+  const k2 = x => x == null ? "–" : x.toFixed(2);
+  const span = (f, l) => f == null ? "–" : `${hm(f)}–${hm(l)}Z`;
+  const dmin = (x, y) => x == null || y == null ? "–" : `${Math.round((y - x) / 60000) > 0 ? "+" : ""}${Math.round((y - x) / 60000)}`;
+  const used = RULES.filter(([k]) => { const r = S.rules[k]; return r.a + r.b + r.c > 0; });
+  $("cmpTable").innerHTML = `<table><tr><th class="t">Rule</th><th>Both</th><th>Only ${esc(A)}</th><th>Only ${esc(B)}</th><th>Neither</th>
+      <th>Agree</th><th>Kappa</th><th>${esc(A)} called</th><th>${esc(B)} called</th><th>Start diff (min)</th><th>End diff (min)</th></tr>` +
+    used.map(([k, l]) => { const r = S.rules[k]; return `<tr><td class="t">${l}</td><td>${r.a}</td><td>${r.b}</td><td>${r.c}</td><td>${r.d}</td>
+      <td>${pct(r.agree)}</td><td>${k2(r.kappa)}</td><td>${span(r.fa, r.la)}</td><td>${span(r.fb, r.lb)}</td><td>${dmin(r.fa, r.fb)}</td><td>${dmin(r.la, r.lb)}</td></tr>`; }).join("") +
+    `</table><p class="note">${S.P.length} volumes in both sheets. Kappa: 1 = perfect agreement, 0 = no better than chance.
+      Start/end diff: ${esc(B)}'s first/last volume minus ${esc(A)}'s (positive = ${esc(B)} later).${used.length < RULES.length ? " Rules neither LWO called are not listed." : ""}</p>`;
+  // lanes
+  const T = S.P.map(([x]) => utc(x.start)), cw = Math.max(8, Math.min(22, Math.floor(1000 / Math.max(T.length, 1)))), lx = 110, rh = 16;
+  let y = 18, svg = "";
+  T.forEach((t, i) => { if (i % Math.ceil(T.length / 8) === 0) svg += `<text x="${lx + i * cw}" y="12">${hm(t)}</text>`; });
+  for (const [k, l] of used) {
+    svg += `<text x="0" y="${y + 12}" style="fill:var(--ink)">${l}</text>`;
+    S.P.forEach(([x, z], i) => {
+      const X = x.rules.includes(k), Z = z.rules.includes(k), col = X && Z ? "var(--both)" : X ? "var(--a)" : Z ? "var(--b)" : "var(--none)";
+      svg += `<rect x="${lx + i * cw}" y="${y}" width="${cw - 1}" height="${rh - 2}" fill="${col}"><title>${hm(T[i])}Z ${l}: ${esc(A)} ${X ? "yes" : "no"}, ${esc(B)} ${Z ? "yes" : "no"}</title></rect>`;
+    });
+    y += rh + 4;
+  }
+  $("cmpLanes").innerHTML = `<svg width="${lx + T.length * cw + 10}" height="${y}">${svg}</svg>`;
+  $("cmpCloud").innerHTML = S.cloud.n ? `<p>${S.cloud.same} of ${S.cloud.n} volumes where both named a cloud agree (${pct(S.cloud.same / S.cloud.n)}).</p>` +
+    (Object.keys(S.cloud.conf).length ? `<table><tr><th class="t">${esc(A)} / ${esc(B)}</th><th>Volumes</th></tr>` +
+      Object.entries(S.cloud.conf).sort((p, q) => q[1] - p[1]).map(([kk, n]) => `<tr><td class="t">${esc(kk)}</td><td>${n}</td></tr>`).join("") + "</table>" : "")
+    : `<p class="note">Neither sheet names a cloud in the same volume.</p>`;
+  const diffs = S.P.filter(([x, z]) => x.rules.slice().sort().join() !== z.rules.slice().sort().join() || x.cloud !== z.cloud);
+  $("cmpDiff").innerHTML = diffs.length ? `<table><tr><th class="t">Volume</th><th class="t">${esc(A)}</th><th class="t">${esc(B)}</th></tr>` +
+    diffs.map(([x, z]) => `<tr><td class="t">${hms(utc(x.start))}</td><td class="t">${esc(x.rules.map(ruleLabel).join(", ") || "none")}${x.cloud ? ` · ${esc(x.cloud)}` : ""}</td>` +
+      `<td class="t">${esc(z.rules.map(ruleLabel).join(", ") || "none")}${z.cloud ? ` · ${esc(z.cloud)}` : ""}</td></tr>`).join("") + "</table>"
+    : `<p>They agree on every volume.</p>`;
+  $("cmpOut").classList.remove("hidden");
+}
+
+// ---------------------------------------------------------------- 3. FINAL
+function mergeSheets(A, B) {                 // agreed values filled; each disagreement kept with both calls in _diff
+  const mb = new Map(B.volumes.map(v => [v.volume, v]));
+  return A.volumes.filter(v => mb.has(v.volume)).sort((x, y) => utc(x.start) - utc(y.start)).map(x => {
+    const z = mb.get(x.volume), r = {volume: x.volume, start: x.start, rules: [], cloud: "", confidence: "", range_nm: "", az_deg: "", note: "", ambiguous: false, _diff: {}};
+    for (const [k] of RULES) {
+      const X = x.rules.includes(k), Z = z.rules.includes(k);
+      if (X && Z) r.rules.push(k); else if (X !== Z) r._diff["rule:" + k] = `${A.labeler}: ${X ? "yes" : "no"} / ${B.labeler}: ${Z ? "yes" : "no"}`;
+    }
+    for (const f of ["cloud", "confidence"]) {
+      if ((x[f] || "") === (z[f] || "")) r[f] = x[f] || "";
+      else r._diff[f] = `${A.labeler}: ${x[f] || "–"} / ${B.labeler}: ${z[f] || "–"}`;
+    }
+    for (const f of ["range_nm", "az_deg"]) r[f] = x[f] || z[f] || "";
+    r.note = [x.note && `${A.labeler}: ${x.note}`, z.note && `${B.labeler}: ${z.note}`].filter(Boolean).join(" | ");
+    return r;
+  });
+}
+const fkey = () => `cloudscope-final:${FIN.case_id}`;
+function startFinal(fromSheets) {
+  $("finErr").textContent = "";
+  if (fromSheets) {
+    if (!SA || !SB) { $("finErr").textContent = "Load both LWO sheets in Compare first, or import a final answer."; return; }
+    let saved = null; try { saved = JSON.parse(localStorage.getItem(`cloudscope-final:${SA.case_id}`) || "null"); } catch (e) { saved = null; }
+    FIN = saved && saved.labelers && saved.labelers.join() === [SA.labeler, SB.labeler].join() ? saved :
+      {case_id: SA.case_id, labelers: [SA.labeler, SB.labeler], volumes: mergeSheets(SA, SB), notes: ""};
+  }
+  $("fnotes").value = FIN.notes || ""; $("byw").value = FIN.agreed_by || $("byw").value;
+  renderFinal(); setView("final");
+}
+function renderFinal() {
+  $("ftbl").innerHTML = tableHTML(FIN.volumes, {final: true});
+  const open = FIN.volumes.filter(r => r._diff && Object.keys(r._diff).length).length, amb = FIN.volumes.filter(r => r.ambiguous).length;
+  $("fstat").textContent = `${FIN.case_id} · ${FIN.labelers.join(" + ")} · ${FIN.volumes.length} volumes · ${open} still to decide · ${amb} ambiguous`;
+  $("finOut").classList.remove("hidden");
+}
+function finalDoc() {
+  return {schema: "cloudscope-final-v1", case_id: FIN.case_id, labelers: FIN.labelers, agreed_by: $("byw").value.trim().toUpperCase(),
+    saved: new Date().toISOString().slice(0, 19) + "Z", notes: $("fnotes").value,
+    volumes: FIN.volumes.map(r => {
+      const open = r._diff ? Object.keys(r._diff) : [];
+      return {volume: r.volume, start: r.start, rules: r.rules, cloud: r.cloud, confidence: r.confidence, range_nm: r.range_nm,
+              az_deg: r.az_deg, note: r.note, ambiguous: !!r.ambiguous, unresolved: open.join(";"), use_for_training: !r.ambiguous && !open.length};
+    })};
+}
+function saveFinal() {
+  if (!FIN) return;
+  FIN.notes = $("fnotes").value; FIN.agreed_by = $("byw").value.trim().toUpperCase();
+  try { localStorage.setItem(fkey(), JSON.stringify(FIN)); $("fsaved").textContent = "Saved in this browser " + new Date().toLocaleTimeString(); } catch (e) { /* export instead */ }
+  const open = FIN.volumes.filter(r => r._diff && Object.keys(r._diff).length).length;
+  $("fstat").textContent = $("fstat").textContent.replace(/\d+ still to decide/, `${open} still to decide`);
+}
+async function importFinal() {
+  $("finErr").textContent = "";
+  try {
+    const f = $("ff").files[0]; if (!f) return;
+    const s = readSheet(f.name, await f.text());
+    await loadCase(s.case_id);
+    FIN = {case_id: s.case_id, labelers: s.labelers || [s.labeler || "?"], agreed_by: s.agreed_by || "", notes: s.notes || "",
+           volumes: s.volumes.map(v => ({...v, ambiguous: !!v.ambiguous,
+             _diff: v.unresolved ? Object.fromEntries(String(v.unresolved).split(";").filter(Boolean).map(k => [k, "undecided"])) : {}}))};
+    startFinal(false);
+  } catch (err) { $("finErr").textContent = err.message; }
+}
+
+// ---------------------------------------------------------------- wiring
+function setView(v) {
+  for (const k of ["label", "compare", "final"]) { $("v-" + k).classList.toggle("hidden", k !== v); $("t-" + k).classList.toggle("on", k === v); }
+}
+$("t-label").onclick = () => setView("label"); $("t-compare").onclick = () => setView("compare"); $("t-final").onclick = () => setView("final");
+for (const ev of ["change", "input", "click"]) {
+  $("tbl").addEventListener(ev, e => editRows(ROWS, e, renderLabel, save));
+  $("ftbl").addEventListener(ev, e => editRows(FIN.volumes, e, renderFinal, saveFinal));
+}
+$("notes").oninput = save; $("fnotes").oninput = saveFinal; $("byw").oninput = saveFinal;
 $("case").onchange = e => openCase(e.target.value);
 $("who").onchange = () => C && openCase(C.id);
 $("export").onclick = () => {
@@ -146,12 +399,15 @@ $("export").onclick = () => {
   const s = sheet(); s.submitted = s.saved;
   download(`label_${C.id}_${s.labeler}.json`, JSON.stringify(s, null, 1), "application/json");
 };
-$("csv").onclick = () => {
-  const s = sheet(), head = ["case_id", "labeler", "volume", "start_utc"].concat(RULES.map(([k]) => k), ["cloud", "confidence", "range_nm", "az_deg", "note"]);
-  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const lines = s.volumes.map(r => [s.case_id, s.labeler, r.volume, r.start].concat(RULES.map(([k]) => +r.rules.includes(k)), [r.cloud, r.confidence, r.range_nm, r.az_deg, r.note]).map(q).join(","));
-  download(`label_${C.id}_${s.labeler}.csv`, head.join(",") + "\n" + lines.join("\n"), "text/csv");
+$("csv").onclick = () => { const s = sheet(); download(`label_${C.id}_${s.labeler}.csv`, csvOf(s, s.volumes), "text/csv"); };
+$("fa").onchange = loadCompare; $("fb").onchange = loadCompare;
+$("toFinal").onclick = () => startFinal(true);
+$("ff").onchange = importFinal;
+$("fexport").onclick = () => {
+  if (!$("byw").value.trim()) { alert("Enter who agreed the final answer (initials) first."); return; }
+  const d = finalDoc(); download(`final_${d.case_id}.json`, JSON.stringify(d, null, 1), "application/json");
 };
+$("fcsv").onclick = () => { const d = finalDoc(); download(`final_${d.case_id}.csv`, csvOf({case_id: d.case_id, labeler: d.labelers.join("+")}, d.volumes, ["ambiguous", "unresolved", "use_for_training"]), "text/csv"); };
 (async () => {
   IDX = await (await fetch("data/index.json?" + Date.now())).json();
   $("case").innerHTML += IDX.cases.filter(c => c.pad).map(c =>
@@ -159,7 +415,7 @@ $("csv").onclick = () => {
   const want = decodeURIComponent(location.hash.slice(1));
   if (want && IDX.cases.some(c => c.id === want)) { $("case").value = want; openCase(want); }
 })();
-if (typeof module !== "undefined") module.exports = {volumesOf};
+if (typeof module !== "undefined") module.exports = {volumesOf, readSheet, compareStats, mergeSheets, kappa};
 </script>
 </body>
 </html>
