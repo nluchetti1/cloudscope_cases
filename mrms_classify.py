@@ -1183,6 +1183,24 @@ def attached_history(frames, valid_iso, la, lo, wind=None):
     return union if seen else None
 
 
+# LLCCR 35 (NASA-STD-4010B section 4.3): physically connected clouds - non-transparent parts
+# touching - are evaluated together, most conservatively, over their combined volume. For radar:
+# connected CUMULUS echo (0 dBZ or more; anvil, layered and elevated echo are not cumulus, so per
+# 4.3a/4.3c they never chain cumulus together) is one cloud: if any part of it reaches -20 C, -10 C
+# or a top colder than +5 C, the whole connected mass does, and the standoffs are measured to its
+# nearest edge. Per 4.3b a detached anvil touching cumulus colder than -10 C is an attached anvil.
+# Radar sees precipitation only, so cloud joined only by non-precipitating cloud is not connected
+# here, and 4.3b's "or had at any time" uses the current frame only. Off by default: switching it
+# changes the verdicts, so it is set explicitly where it is being evaluated.
+CONNECT_CUMULUS = False
+
+
+def _spread_objects(lab, m):
+    """Every column of each labeled object that contains any column of m (LLCCR 35)."""
+    ids = np.unique(lab[m & (lab > 0)])
+    return (np.isin(lab, ids) & (lab > 0)) if ids.size else m
+
+
 def evaluate(F, z0, la, lo, history=None, iso=None, sep=None, ltg_nm=None, sat=None):
     """Traffic light, per-rule grids, cloud class and echo-top level for every cell."""
     L = LLCC
@@ -1338,6 +1356,20 @@ def evaluate(F, z0, la, lo, history=None, iso=None, sep=None, ltg_nm=None, sat=N
     cu10 = (e["r10"] | gap_m10 | sat_m10) & ~not_cu
     cu20 = (e["r20"] | sat_m20) & ~not_cu
     sat_up = (sat_m10 & ~(e["r10"] | gap_m10)) | (sat_m20 & ~e["r20"])
+    cuthru = cu_echo & top_to_plus5
+    if CONNECT_CUMULUS and cu_echo.any():
+        lab_cu, n_cu = label(cu_echo, structure=np.ones((3, 3)))
+        cu20 = _spread_objects(lab_cu, cu20)
+        cu10 = _spread_objects(lab_cu, cu10 | cu20)
+        cuthru = _spread_objects(lab_cu, cuthru | cu10)
+        if detached.any():                  # 4.3b: detached anvil touching cumulus colder than -10 C
+            lab_d, n_d = label(detached, structure=np.ones((3, 3)))
+            touch = maximum_filter(cu10.astype(np.uint8), size=3) > 0
+            ids = np.unique(lab_d[touch & (lab_d > 0)])
+            if ids.size:
+                became = np.isin(lab_d, ids) & (lab_d > 0)
+                attached = attached | became
+                detached = detached & ~became
     # Thick cloud layer: echo spanning at least ~4,500 ft inside the 0 to -20 C band. Adjacent
     # isotherm slices 10 C apart are ~1.5 km (~5,000 ft) apart, so echo at both ends of any
     # 10-degree span counts. The first version only tested 0 to -10 C, so an elevated layer
@@ -1354,7 +1386,7 @@ def evaluate(F, z0, la, lo, history=None, iso=None, sep=None, ltg_nm=None, sat=N
         lit = lit_within(L["lightning_nm"] + m)
         return {
             "lightning":       lit,
-            "cumulus_through": near(cu_echo & top_to_plus5, m),
+            "cumulus_through": near(cuthru, m),
             "cumulus_5nm":     near(cu10, L["cumulus_5nm"] + m),
             "cumulus_10nm":    near(cu20, L["cumulus_10nm"] + m),
             "attached_anvil":  (near(attached, L["attached_3nm"] + m) & ~exception)
@@ -1416,7 +1448,7 @@ def evaluate(F, z0, la, lo, history=None, iso=None, sep=None, ltg_nm=None, sat=N
     mrr_here = peak(mrr, L["mrr_eval_nm"])
     # The masks each rule is built from, and the MRR - recorded by the climatology as distances so
     # the standoffs and thresholds can be re-applied later without re-scoring the radar.
-    feat = {"cuthru": cu_echo & top_to_plus5, "cu10": cu10, "cu20": cu20, "att": attached,
+    feat = {"cuthru": cuthru, "cu10": cu10, "cu20": cu20, "att": attached,
             "det": detached, "warm": (attached | detached) & warm_cols, "thick": thick,
             "ltg": lightning, "mrr1": mrr1}
     diag = {"feat": feat, "sat_ok": sat_ok, "sat_up": sat_up, "sat": sat,

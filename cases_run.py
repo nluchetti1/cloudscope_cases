@@ -154,9 +154,11 @@ def score_window(w, fms):
     case = {"id": w["id"], "start": w["start"].isoformat(), "end": w["end"].isoformat(), "vehicle": w["vehicle"],
             "payload": w["payload"], "pad": w["pad"], "pad_scored": PAD_ALIAS.get(w["pad"], w["pad"]),
             "launched": bool(w.get("launched_this_count", False)), "pads": pads, "rule_keys": mc.RULE_KEYS,
-            "feat_names": CR.FEAT_NAMES, "frames": [], "mrms": [], "kmlb": [], "fm5": [], "fm7": [],
+            "feat_names": CR.FEAT_NAMES, "frames": [], "mrms": [], "kmlb": [], "mrms_c": [], "kmlb_c": [], "fm5": [], "fm7": [],
             "kmlb_info": [], "glm": [], "skipped": []}
-    prev = {"mrms": (None, None), "kmlb": (None, None)}
+    # four verdicts per frame: each radar without and with LLCCR 35 connectivity ("_c")
+    VARIANTS = (("mrms", False), ("kmlb", False), ("mrms_c", True), ("kmlb_c", True))
+    prev = {k: (None, None) for k, _ in VARIANTS}
     z0, z0_t, kcache, satc, windc = None, None, {}, {}, {}
     pool = cf.ThreadPoolExecutor(max_workers=4)
     for t in frames:
@@ -206,20 +208,25 @@ def score_window(w, fms):
                 except Exception as e:
                     logging.warning(f"{t:%Y-%m-%d %H:%MZ} KMLB: {type(e).__name__}: {e}")
             rec = {}
-            for mode in ("mrms", "kmlb"):
+            for mode, conn in VARIANTS:
                 Fm = {k: v.copy() for k, v in F.items()}
                 L = lvl
-                if mode == "kmlb" and kf is not None:
+                if mode.startswith("kmlb") and kf is not None:
                     kf.apply_fields(Fm)
                     L = kf.merge_level(lvl, CR.STEINER_KM) if lvl is not None else None
                 sep = mc.separation_lite(L, CR.STEINER_KM, la, lo) if L is not None else None
                 hist = drift_history(*prev[mode], t, wind, la, lo)
-                status, red, yel, cls, top, diag = mc.evaluate(Fm, zz, la, lo, hist, None, sep, ltg_nm, sat)
+                mc.CONNECT_CUMULUS = conn
+                try:
+                    status, red, yel, cls, top, diag = mc.evaluate(Fm, zz, la, lo, hist, None, sep, ltg_nm, sat)
+                finally:
+                    mc.CONNECT_CUMULUS = False
                 prev[mode] = ((cls == 6), t)
                 rec[mode] = pad_values(status, red, yel, cls, diag, la, lo, ltg_nm, pads)
             fm = fms.peaks(t)
             case["frames"].append(t.isoformat())
-            case["mrms"].append(rec["mrms"]); case["kmlb"].append(rec["kmlb"])
+            for k, _ in VARIANTS:
+                case[k].append(rec[k])
             case["fm5"].append(fm[FM_NM]); case["fm7"].append(fm[FM_WATCH_NM])
             ki = kf.info if kf is not None else {}
             case["kmlb_info"].append([ki.get("volume"), ki.get("top_deg"), ki.get("lc39a_top_km"), ki.get("mode", "none")])
