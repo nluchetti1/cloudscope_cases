@@ -51,6 +51,7 @@
   <button id="m-mrms" class="on">MRMS</button><button id="m-kmlb">KMLB hybrid</button>
   <label class="btn">Load LWO workbook<input id="wb" type="file" accept=".xlsx,.xlsm" hidden></label>
   <span id="wbnote" class="note">Loaded on this computer only — nothing is uploaded.</span>
+  <span>Connectivity (LLCCR 35):</span><button id="k-off" class="on">Off</button><button id="k-on">On</button>
   <span>Clouds:</span><button id="c-all" class="on">All rules</button><button id="c-ml">Most likely</button>
   <label class="note"><input id="o-watch" type="checkbox" checked> Show watch</label>
   <label class="note"><input id="o-conf" type="checkbox" checked> Mark close calls</label>
@@ -76,7 +77,7 @@
           <span><i style="background:var(--clear)"></i>Clear</span><span><i style="background:var(--nodata)"></i>No field-mill data</span><span><i style="background:var(--lwo)"></i>LWO logged violation</span>
           <span><i style="background:var(--lwo);opacity:.35"></i>LWO: only rules the algorithm does not evaluate (Overall row)</span>
           <span><i style="background:transparent;outline:1.5px solid var(--red);outline-offset:-2px"></i>Violating, but not the most likely cloud</span>
-          <span><i style="background:var(--red);box-shadow:inset 0 0 0 3px var(--red),inset 0 0 0 6px #111a25"></i>Close call (see Frame)</span>
+          <span><svg width="12" height="12" style="vertical-align:-2px;margin-right:4px"><rect width="12" height="12" rx="2" fill="var(--red)"/><circle cx="6" cy="6" r="2.4" fill="#111a25"/></svg>Close call: the radars disagree, or near a standoff / threshold (click it - Frame says why)</span>
           <span>Blue line: LCC evaluation starts (the log's window start, ~T-2 h) · shaded: the hour before it, for context · dashed line: T-0 / window end</span></div>
       </div>
       <div class="grid2">
@@ -116,7 +117,10 @@ const NOT_EVALUATED = /debris|disturbed|smoke|tribo|pcpn|precip|solar/i;
 const OVERALL = {key: "overall", label: "Overall", overall: true};
 const ALL_RULES = [OVERALL].concat(RULES);
 let IDX = null, SUM = {}, CASE = null, LWO = null, FLAGS = null, MODE = "mrms", THR = 1000, SEL = null, REPLAYS = {};
-let CLOUDS = "all", SHOW_WATCH = true, SHOW_CONF = true;
+let CLOUDS = "all", SHOW_WATCH = true, SHOW_CONF = true, CONN = false;
+// the verdicts in use: each radar without connectivity ("mrms", "kmlb") or with it ("mrms_c", "kmlb_c");
+// cases scored before connectivity existed have only the first, and fall back with a note
+const vk = (m, obj) => (CONN && obj && obj[m + "_c"] && obj[m + "_c"].length) ? m + "_c" : m;
 const SMOOTH = 5;                            // frames (10 min) for the most-likely-cloud smoothing
 const CLOSE_NM = 1.0, CLOSE_FM = 0.10;       // close call: within 1 nmi of a standoff, 10% of the mill threshold
 const utc = s => Date.parse(String(s).replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? "" : "Z"));
@@ -280,7 +284,7 @@ async function openCase(id) {
 }
 function series(c, mode) {                   // countdown pad, per frame: row + field mills
   const p = c.pads.indexOf(c.pad_scored || "LC-39A");
-  return c[mode].map((f, i) => ({row: [f.status[p], f.red[p], f.yel[p]].concat(f.feat[p]), cls: f.cls[p], fm5: c.fm5[i][p], fm7: c.fm7[i][p]}));
+  return c[vk(mode, c)].map((f, i) => ({row: [f.status[p], f.red[p], f.yel[p]].concat(f.feat[p]), cls: f.cls[p], fm5: c.fm5[i][p], fm7: c.fm7[i][p]}));
 }
 function renderCase() {
   const c = CASE, a = utc(c.start), b = utc(c.end);
@@ -288,7 +292,9 @@ function renderCase() {
     ${ymd(a)} · window ${hhmm(a)}–${hhmm(b)}Z · pad ${esc(c.pad || "test countdown — scored at LC-39A")}
     ${c.pad_scored && c.pad_scored !== c.pad ? `(scored at ${esc(c.pad_scored)})` : ""} ·
     ${c.launched ? "launched at the window end" : (c.pad ? "no launch on this count" : "test")}
-    ${c.skipped.length ? ` · <span style="color:var(--yellow)">${c.skipped.length} frame(s) missing data</span>` : ""}`;
+    ${c.skipped.length ? ` · <span style="color:var(--yellow)">${c.skipped.length} frame(s) missing data</span>` : ""}
+    ${CONN && !(c.mrms_c && c.mrms_c.length) ? ` · <span style="color:var(--yellow)">scored before connectivity existed - showing the verdicts without it (re-run the case replays with rerun checked)</span>` :
+      CONN ? " · connectivity (LLCCR 35) on" : ""}`;
   const T = c.frames.map(utc), S = {mrms: series(c, "mrms"), kmlb: series(c, "kmlb")};
   const ML = {mrms: mostLikely(S.mrms.map(s => s.row)), kmlb: mostLikely(S.kmlb.map(s => s.row))};
   const cw = Math.max(5, Math.min(12, Math.floor(1100 / T.length))), lx = 130, rh = 14;
@@ -364,7 +370,7 @@ function replayButton(c) {
   return `<a class="btn" href="${href}" target="_blank" rel="noopener">Request radar replay + GR2 package</a>`;
 }
 function showFrame(i, m) {
-  const c = CASE, p = c.pads.indexOf(c.pad_scored || "LC-39A"), f = c[m][i], t = utc(c.frames[i]);
+  const c = CASE, p = c.pads.indexOf(c.pad_scored || "LC-39A"), f = c[vk(m, c)][i], t = utc(c.frames[i]);
   const S = series(c, m), O = series(c, m === "mrms" ? "kmlb" : "mrms"), ml = mostLikely(S.map(s => s.row))[i];
   const close = ALL_RULES.flatMap(r => (algoRed(S[i].row, S[i].fm5, r) || algoYel(S[i].row, S[i].fm7, r)) ?
     closeReasons(r, S[i].row, S[i].fm5, O[i], ml).map(w => `${r.label}: ${w}`) : []);
@@ -401,10 +407,10 @@ function renderScore() {
 function downloadCSV() {
   if (!CASE) return;
   const c = CASE, p = c.pads.indexOf(c.pad_scored || "LC-39A");
-  const head = ["time_utc", "in_window"].concat(...["mrms", "kmlb"].map(m => [`${m}_status`, `${m}_rules`])).concat(["fm5_vm", "fm7_vm"]);
+  const head = ["time_utc", "in_window"].concat(...["mrms", "kmlb"].map(m => [`${vk(m, c)}_status`, `${vk(m, c)}_rules`])).concat(["fm5_vm", "fm7_vm"]);
   const a = utc(c.start), b = utc(c.end);
   const lines = c.frames.map((t, i) => [t, +(utc(t) >= a && utc(t) <= b)].concat(...["mrms", "kmlb"].map(m =>
-    [c[m][i].status[p], c.rule_keys.filter((k, bb) => (c[m][i].red[p] >> bb) & 1).join("|")])).concat([c.fm5[i][p], c.fm7[i][p]]).join(","));
+    [c[vk(m, c)][i].status[p], c.rule_keys.filter((k, bb) => (c[vk(m, c)][i].red[p] >> bb) & 1).join("|")])).concat([c.fm5[i][p], c.fm7[i][p]]).join(","));
   const blob = new Blob([head.join(",") + "\n" + lines.join("\n")], {type: "text/csv"});
   const el = document.createElement("a"); el.href = URL.createObjectURL(blob); el.download = `${c.id}.csv`; el.click();
 }
@@ -414,7 +420,8 @@ function computeStats(mode) {
   const out = {}, dis = [], scrub = {red: 0, n: 0};
   for (const r of ALL_RULES) out[r.key] = {cd: [0, 0, 0, 0], fr: [0, 0, 0, 0], lag: []};   // a b c d
   for (const c of IDX.cases) {
-    const s = SUM[c.id]; if (!s || !c.pad) continue;
+    const s0 = SUM[c.id]; if (!s0 || !c.pad) continue;
+    const s = Object.assign({}, s0, {[mode]: s0[vk(mode, s0)]});
     const a = utc(c.start), b = utc(c.end), T = s.m.map(m => a + m * 60000);
     const ML = mostLikely(s[mode]), fl = flagsFor(c);
     let disagree = 0;
@@ -474,7 +481,9 @@ function renderStats() {
     <p class="note">Field mills scored at ${THR} V/m; frames with no mill reading within 5 nmi are left out, and
       ${R[MODE].out.fieldmill.nodata || 0} countdown(s) with no field-mill data at all are left out of the field-mill row. Scrubbed or delayed counts with the algorithm violating at
       the last frame (~T-0): MRMS ${R.mrms.scrub.red} of ${R.mrms.scrub.n}, hybrid ${R.kmlb.scrub.red} of ${R.kmlb.scrub.n}.</p>
-    <p class="note">Clouds: ${CLOUDS === "ml" ? "most likely cloud only - one cloud rule per frame" : "every cloud rule the algorithm flags"}.
+    <p class="note">Connectivity (LLCCR 35): ${CONN ? "on - connected cumulus evaluated as one cloud" : "off"}${CONN ?
+      ` (${IDX.cases.filter(c => SUM[c.id] && SUM[c.id].mrms_c).length} of ${Object.keys(SUM).length} countdowns scored with it)` : ""}.
+      Clouds: ${CLOUDS === "ml" ? "most likely cloud only - one cloud rule per frame" : "every cloud rule the algorithm flags"}.
       Countdowns the LLCC Data tab flags for a rule count as LWO-violating even without times; without times they are left out of the frame scores.</p>
     <h3>Workbook check</h3>
     <p class="note">${M.checks.length ? `${M.checks.length} countdown(s) where the LLCC Data and LLCC Violation Data tabs disagree on an evaluated rule:` : "The LLCC Data and LLCC Violation Data tabs agree for every replayed countdown."}</p>
@@ -495,6 +504,8 @@ $("m-mrms").onclick = () => setMode("mrms"); $("m-kmlb").onclick = () => setMode
 function redraw() { if (CASE) renderCase(); if (!$("stats-view").classList.contains("hidden")) renderStats(); }
 function setClouds(v) { CLOUDS = v; $("c-all").classList.toggle("on", v === "all"); $("c-ml").classList.toggle("on", v === "ml"); redraw(); }
 $("c-all").onclick = () => setClouds("all"); $("c-ml").onclick = () => setClouds("ml");
+function setConn(v) { CONN = v; $("k-off").classList.toggle("on", !v); $("k-on").classList.toggle("on", v); redraw(); }
+$("k-off").onclick = () => setConn(false); $("k-on").onclick = () => setConn(true);
 $("o-watch").onchange = e => { SHOW_WATCH = e.target.checked; redraw(); };
 $("o-conf").onchange = e => { SHOW_CONF = e.target.checked; redraw(); };
 $("v-case").onclick = () => setView("case"); $("v-stats").onclick = () => setView("stats");
