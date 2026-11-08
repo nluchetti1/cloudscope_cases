@@ -162,6 +162,9 @@ jobs:
       - run: |
           python replay_publish.py "${{ needs.plan.outputs.case }}" --inp out --site site \
             --gr2-url "${{ needs.gr2.outputs.url }}" --gr2-partial "${{ needs.gr2.outputs.partial }}"
+          # every publish refreshes the pages too, so a page committed since the last case run goes live
+          cp web/index.html site/index.html
+          cp web/label.html site/label.html
           touch site/.nojekyll
       - name: Publish
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
