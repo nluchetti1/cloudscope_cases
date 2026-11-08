@@ -44,9 +44,9 @@ n = len(case["frames"])
 print(f"   {case['id']}: {n} frames {case['frames'][0][11:16]}..{case['frames'][-1][11:16]}, skipped {case['skipped']}")
 check(n == 16 and not case["skipped"], "frames every 2 min from 10 min before the start to the end (16)")
 check(len(case["mrms"]) == len(case["kmlb"]) == len(case["fm5"]) == n, "MRMS, hybrid and field mills recorded per frame")
-check(len(case["mrms_c"]) == len(case["kmlb_c"]) == n and case["mrms_c"][0]["feat"][0] is not None,
-      "with-connectivity verdicts recorded per frame for both radars (mrms_c, kmlb_c)")
-check(mc.CONNECT_CUMULUS is False, "the switch is back off after scoring")
+check(all(len(case[k]) == n for k in ("mrms_c", "kmlb_c", "mrms_ca", "kmlb_ca")),
+      "connectivity verdicts recorded per frame for both radars: cumulus (_c) and cumulus + 4.3b (_ca)")
+check(mc.CONNECT_CUMULUS is False and mc.CONNECT_ANVIL_43B is False, "both switches back off after scoring")
 p = case["pads"].index("SLC-40")
 check(len(case["mrms"][0]["feat"]) == 11 and len(case["mrms"][0]["feat"][0]) == len(CR.FEAT_NAMES), "per-pad features as in the climatology")
 st_m = [f["status"][p] for f in case["mrms"]]; st_k = [f["status"][p] for f in case["kmlb"]]

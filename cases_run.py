@@ -154,10 +154,12 @@ def score_window(w, fms):
     case = {"id": w["id"], "start": w["start"].isoformat(), "end": w["end"].isoformat(), "vehicle": w["vehicle"],
             "payload": w["payload"], "pad": w["pad"], "pad_scored": PAD_ALIAS.get(w["pad"], w["pad"]),
             "launched": bool(w.get("launched_this_count", False)), "pads": pads, "rule_keys": mc.RULE_KEYS,
-            "feat_names": CR.FEAT_NAMES, "frames": [], "mrms": [], "kmlb": [], "mrms_c": [], "kmlb_c": [], "fm5": [], "fm7": [],
+            "feat_names": CR.FEAT_NAMES, "frames": [], "mrms": [], "kmlb": [], "mrms_c": [], "kmlb_c": [], "mrms_ca": [], "kmlb_ca": [], "fm5": [], "fm7": [],
             "kmlb_info": [], "glm": [], "skipped": []}
-    # four verdicts per frame: each radar without and with LLCCR 35 connectivity ("_c")
-    VARIANTS = (("mrms", False), ("kmlb", False), ("mrms_c", True), ("kmlb_c", True))
+    # six verdicts per frame, each radar: no connectivity; LLCCR 35 cumulus merging ("_c"); and
+    # cumulus merging plus 4.3b with 3-D contact ("_ca")
+    VARIANTS = (("mrms", (False, False)), ("kmlb", (False, False)), ("mrms_c", (True, False)),
+                ("kmlb_c", (True, False)), ("mrms_ca", (True, True)), ("kmlb_ca", (True, True)))
     prev = {k: (None, None) for k, _ in VARIANTS}
     z0, z0_t, kcache, satc, windc = None, None, {}, {}, {}
     pool = cf.ThreadPoolExecutor(max_workers=4)
@@ -216,11 +218,11 @@ def score_window(w, fms):
                     L = kf.merge_level(lvl, CR.STEINER_KM) if lvl is not None else None
                 sep = mc.separation_lite(L, CR.STEINER_KM, la, lo) if L is not None else None
                 hist = drift_history(*prev[mode], t, wind, la, lo)
-                mc.CONNECT_CUMULUS = conn
+                mc.CONNECT_CUMULUS, mc.CONNECT_ANVIL_43B = conn
                 try:
                     status, red, yel, cls, top, diag = mc.evaluate(Fm, zz, la, lo, hist, None, sep, ltg_nm, sat)
                 finally:
-                    mc.CONNECT_CUMULUS = False
+                    mc.CONNECT_CUMULUS = mc.CONNECT_ANVIL_43B = False
                 prev[mode] = ((cls == 6), t)
                 rec[mode] = pad_values(status, red, yel, cls, diag, la, lo, ltg_nm, pads)
             fm = fms.peaks(t)

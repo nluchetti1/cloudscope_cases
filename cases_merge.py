@@ -42,7 +42,7 @@ def main():
                                 "kmlb": [[f["status"][p], f["red"][p], f["yel"][p]] + f["feat"][p] for f in c["kmlb"]],
                                 # with LLCCR 35 connectivity, when the case was scored with it
                                 **{k: [[f["status"][p], f["red"][p], f["yel"][p]] + f["feat"][p] for f in c[k]]
-                                   for k in ("mrms_c", "kmlb_c") if c.get(k)},
+                                   for k in ("mrms_c", "kmlb_c", "mrms_ca", "kmlb_ca") if c.get(k)},
                                 "fm5": [x[p] for x in c["fm5"]], "fm7": [x[p] for x in c["fm7"]]}
     rk = json.load(open(glob.glob(os.path.join(cdir, "*.json"))[0]))["rule_keys"] if index else []
     fn = json.load(open(glob.glob(os.path.join(cdir, "*.json"))[0]))["feat_names"] if index else []

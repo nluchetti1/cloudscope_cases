@@ -70,13 +70,18 @@ that gets compared. Open the case page or the replay for a case only after expor
 
 ## Connectivity (LLCCR 35)
 NASA-STD-4010B section 4.3: physically connected clouds are evaluated together, most
-conservatively. mrms_classify.CONNECT_CUMULUS (off by default) applies it for radar: connected
-cumulus echo is one cloud - if any part reaches -20 C, -10 C or a top colder than +5 C, the whole
-mass does, and standoffs are measured to its nearest edge; anvil and layered echo never connect
-cumulus (4.3a, 4.3c); a detached anvil touching cumulus colder than -10 C is an attached anvil
-(4.3b). Limits: radar sees precipitation only (cloud joined by non-precipitating cloud is not
-connected), and 4.3b's "or had at any time" uses the current frame. Every frame is scored four
-ways - MRMS and the hybrid, each without and with connectivity (mrms, kmlb, mrms_c, kmlb_c) - and
+conservatively. Two switches in mrms_classify.py, both off by default:
+- CONNECT_CUMULUS - connected cumulus echo is one cloud: if any part reaches -20 C, -10 C or a top
+  colder than +5 C, the whole mass does, and standoffs are measured to its nearest edge. Anvil and
+  layered echo never connect cumulus (4.3a, 4.3c).
+- CONNECT_ANVIL_43B - 4.3b: a detached anvil physically connected to cumulus colder than -10 C is an
+  attached anvil. "Connected" is 3-D: beside that cumulus on the map AND its echo base within
+  ANVIL_CONTACT_M (1 km) of the cumulus's echo top. (A first, map-only version halved
+  detached-anvil POD with no gain for attached anvil, because anvils floating far above cumulus
+  counted as touching.)
+Limits: radar sees precipitation only (cloud joined by non-precipitating cloud is not connected);
+4.3b's "or had at any time" uses the current frame. Every frame is scored six ways - MRMS and the
+hybrid, each with no connectivity, cumulus merging (_c), and cumulus merging + 4.3b (_ca) - and
 the case page's "Connectivity" switch chooses between them, statistics included.
 
 ## Notes

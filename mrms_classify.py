@@ -1188,11 +1188,36 @@ def attached_history(frames, valid_iso, la, lo, wind=None):
 # connected CUMULUS echo (0 dBZ or more; anvil, layered and elevated echo are not cumulus, so per
 # 4.3a/4.3c they never chain cumulus together) is one cloud: if any part of it reaches -20 C, -10 C
 # or a top colder than +5 C, the whole connected mass does, and the standoffs are measured to its
-# nearest edge. Per 4.3b a detached anvil touching cumulus colder than -10 C is an attached anvil.
-# Radar sees precipitation only, so cloud joined only by non-precipitating cloud is not connected
-# here, and 4.3b's "or had at any time" uses the current frame only. Off by default: switching it
-# changes the verdicts, so it is set explicitly where it is being evaluated.
+# nearest edge. Radar sees precipitation only, so cloud joined only by non-precipitating cloud is
+# not connected here. Off by default: switching it changes the verdicts, so it is set explicitly
+# where it is being evaluated.
 CONNECT_CUMULUS = False
+# LLCCR 35 4.3b, separately: a detached anvil physically connected to cumulus colder than -10 C is
+# assessed as an attached anvil. "Physically connected" is three-dimensional: the anvil must sit
+# next to that cumulus on the map AND reach down to its top - its echo base within
+# ANVIL_CONTACT_M of the cumulus's echo top. The first version tested the map only, so an anvil
+# floating kilometres above a cumulus counted as touching it: detached-anvil POD halved (0.62 ->
+# 0.31) with no gain for attached anvil (case statistics, Nov 2026). "Or had at any time" uses the
+# current frame only.
+CONNECT_ANVIL_43B = False
+ANVIL_CONTACT_M = 1000.0
+
+
+def _anvil_contact(detached, cu10, e, z_of, hmax, sup, top_m):
+    """Detached-anvil columns in 3-D contact with cumulus colder than -10 C (LLCCR 35 4.3b)."""
+    ctop = np.full(detached.shape, -np.inf)             # cumulus echo top, m
+    for k, tc in (("r20", -20.0), ("r15", -15.0), ("r10", -10.0), ("r5", -5.0), ("r0", 0.0)):
+        ctop = np.where(np.isneginf(ctop) & e[k], z_of(tc), ctop)
+    ctop = np.maximum(ctop, np.where(cu10, hmax, -np.inf))
+    if top_m is not None:
+        ctop = np.where(np.isfinite(top_m), np.maximum(ctop, top_m), ctop)
+    ctop = np.where(cu10, ctop, -np.inf)
+    abase = np.full(detached.shape, np.inf)              # anvil echo base, m
+    for k, tc in (("r0", 0.0), ("r5", -5.0), ("r10", -10.0), ("r15", -15.0), ("r20", -20.0)):
+        abase = np.where(np.isposinf(abase) & e[k], z_of(tc), abase)
+    abase = np.where(np.isposinf(abase) & (sup >= 0.0), 10058.0, abase)
+    reach = maximum_filter(ctop, size=3)                 # the tallest cumulus top next to each column
+    return detached & (abase <= reach + ANVIL_CONTACT_M)
 
 
 def _spread_objects(lab, m):
@@ -1362,14 +1387,14 @@ def evaluate(F, z0, la, lo, history=None, iso=None, sep=None, ltg_nm=None, sat=N
         cu20 = _spread_objects(lab_cu, cu20)
         cu10 = _spread_objects(lab_cu, cu10 | cu20)
         cuthru = _spread_objects(lab_cu, cuthru | cu10)
-        if detached.any():                  # 4.3b: detached anvil touching cumulus colder than -10 C
+    if CONNECT_ANVIL_43B and detached.any() and cu10.any():   # 4.3b, with 3-D contact
+        touch = _anvil_contact(detached, cu10, e, z_of, hmax, F["super"],
+                               sep.get("top_m") if sep is not None else None)
+        if touch.any():
             lab_d, n_d = label(detached, structure=np.ones((3, 3)))
-            touch = maximum_filter(cu10.astype(np.uint8), size=3) > 0
-            ids = np.unique(lab_d[touch & (lab_d > 0)])
-            if ids.size:
-                became = np.isin(lab_d, ids) & (lab_d > 0)
-                attached = attached | became
-                detached = detached & ~became
+            became = _spread_objects(lab_d, touch)       # the whole anvil, wherever one part touches
+            attached = attached | became
+            detached = detached & ~became
     # Thick cloud layer: echo spanning at least ~4,500 ft inside the 0 to -20 C band. Adjacent
     # isotherm slices 10 C apart are ~1.5 km (~5,000 ft) apart, so echo at both ends of any
     # 10-degree span counts. The first version only tested 0 to -10 C, so an elevated layer
