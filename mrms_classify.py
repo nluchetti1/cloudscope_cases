@@ -1221,9 +1221,12 @@ def _anvil_contact(detached, cu10, e, z_of, hmax, sup, top_m):
 
 
 def _spread_objects(lab, m):
-    """Every column of each labeled object that contains any column of m (LLCCR 35)."""
+    """m, plus every column of each labeled object that contains any column of m (LLCCR 35).
+    Only ever adds: a flagged column outside every object stays flagged (MRMS's isotherm products and
+    composite are separate, so a column can show echo at -20 C while the composite is below 0 dBZ -
+    dropping it lost two real violations, Starlink 6-22 and GOES-U, Nov 2026)."""
     ids = np.unique(lab[m & (lab > 0)])
-    return (np.isin(lab, ids) & (lab > 0)) if ids.size else m
+    return ((np.isin(lab, ids) & (lab > 0)) | m) if ids.size else m
 
 
 def evaluate(F, z0, la, lo, history=None, iso=None, sep=None, ltg_nm=None, sat=None):
