@@ -1,0 +1,128 @@
+name: GR2 packages (batch)
+
+# Builds GR2Analyst packages for many cases in one run - no radar replays, so the site's replay
+# limit is untouched. Each package is kept as a release file (tag gr2-<case id>), exactly as a
+# single "Request radar replay" would make it. Built with Brian Cizek's Launch Weather Replay
+# (pinned in LWR_SHA; used with permission). The default list is the 40 blind-study cases.
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: "Case ids, separated by spaces (default: the 40 study cases)"
+        default: "20201206_1417_LC39A 20210124_1300_SLC40 20210603_1529_LC39A 20210606_0226_SLC40 20210629_1656_SLC40 20210828_0537_LC39A 20211112_1041_SLC40 20211221_0807_LC39A 20220127_2111_SLC40 20220319_0114_SLC40 20220629_1903_SLC40 20220701_1900_SLC41 20220829_0933_LC39B 20220914_0010_SLC40 20221122_1854_LC39A 20221123_0057_SLC40 20230126_0732_SLC40 20230519_0331_SLC40 20230524_0125_SLC40 20230623_1156_SLC40 20230723_2250_SLC40 20230728_0110_SLC40 20230916_0138_SLC40 20230929_2049_SLC40 20240313_2132_LC39A 20240324_0109_LC39A 20240607_2200_SLC40 20240625_1916_LC39A 20240905_1035_SLC40 20240928_1517_SLC40 20241216_2251_SLC40 20241217_1859_LC39A 20250225_0314_SLC40 20250412_0311_LC39A 20250512_0303_LC39A 20250607_0119_SLC40 20250625_1703_SLC40 20250721_1912_SLC40 20250731_1409_LC39A 20251109_1745_LC36"
+      rebuild:
+        description: "Rebuild packages that already exist"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  LWR_REPO: cyclonecizek/LaunchWeatherReplay
+  LWR_SHA: e7cf6520b7f56213fb00711cd688a6bd4e19b680
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.p.outputs.matrix }}
+      count: ${{ steps.p.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -q pandas
+      - id: p
+        env:
+          CASES: ${{ inputs.cases }}
+          REBUILD: ${{ inputs.rebuild }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          from case_window import window
+          ids = [c for c in re.split(r"[\s,]+", os.environ["CASES"]) if c]
+          bad = [c for c in ids if not re.fullmatch(r"\d{8}_\d{4}_[A-Z0-9]+", c)]
+          if bad: raise SystemExit(f"not case ids: {bad}")
+          have = set()
+          if os.environ.get("REBUILD", "false").lower() != "true":
+              out = subprocess.run(["gh", "release", "list", "-R", os.environ["GITHUB_REPOSITORY"], "--limit", "1000",
+                                    "--json", "tagName"], capture_output=True, text=True).stdout or "[]"
+              have = {r["tagName"] for r in json.loads(out)}
+          todo = []
+          for c in dict.fromkeys(ids):
+              if f"gr2-{c}" in have:
+                  print(f"{c}: package exists - skipped"); continue
+              s, e, p = window(c)
+              todo.append({"case": c, "start": f"{s:%Y-%m-%dT%H:%M}", "end": f"{e:%Y-%m-%dT%H:%M}", "payload": p})
+          print(f"{len(todo)} package(s) to build")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fp:
+              fp.write(f"matrix={json.dumps(todo)}\ncount={len(todo)}\n")
+          PY
+
+  gr2:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4            # gentle on the KSC Weather Archive
+      matrix:
+        job: ${{ fromJson(needs.plan.outputs.matrix) }}
+    env:
+      NODE_USE_SYSTEM_CA: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.LWR_REPO }}", ref: "${{ env.LWR_SHA }}", path: lwr, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm, cache-dependency-path: lwr/package-lock.json }
+      - name: Install Launch Weather Replay
+        working-directory: lwr
+        run: npm ci --no-audit --no-fund
+      - name: Load the missing KSC intermediate certificate
+        working-directory: lwr
+        run: bash scripts/ksc-trust.sh
+      - name: Install siphon for the KXMR sounding
+        run: |
+          python3 -m venv "$RUNNER_TEMP/siphon"
+          "$RUNNER_TEMP/siphon/bin/pip" install --quiet siphon==0.11.0
+          echo "SOUNDING_PYTHON=$RUNNER_TEMP/siphon/bin/python" >> "$GITHUB_ENV"
+      - name: Build the GR2 package (${{ matrix.job.payload }})
+        id: scenario
+        working-directory: lwr
+        env:
+          SCENARIO_MODE: Weather scenario
+          SCENARIO_START: ${{ matrix.job.start }}
+          SCENARIO_END: ${{ matrix.job.end }}
+          SCENARIO_RADAR: KMLB
+          SCENARIO_WINDS: "false"
+          SCENARIO_FIELDMILLS: "true"
+          SCENARIO_MERLIN: "true"
+          SCENARIO_WIND_HEIGHT: "54"
+          SCENARIO_TRAIL: "30"
+          SCENARIO_ALLOW_PARTIAL: "true"
+        run: npm run scenario
+      - name: Keep it as a release file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZIP: ${{ steps.scenario.outputs.archive }}
+          NAME: ${{ steps.scenario.outputs.filename }}
+          CASE: ${{ matrix.job.case }}
+          PAYLOAD: ${{ matrix.job.payload }}
+          START: ${{ matrix.job.start }}
+          END: ${{ matrix.job.end }}
+        run: |
+          FILE="GR2_${CASE}.zip"; case "$NAME" in *-PARTIAL.zip) FILE="GR2_${CASE}-PARTIAL.zip";; esac
+          cp "$ZIP" "$RUNNER_TEMP/$FILE"
+          TAG="gr2-$CASE"
+          NOTES="GR2Analyst package for $PAYLOAD, LCC evaluation $START-${END:11}Z: KMLB Level II with MERLIN (30-min trail) and field-mill placefiles. Built with Launch Weather Replay by Brian Cizek ($LWR_REPO@${LWR_SHA:0:7}), used with permission. Extract fully and read README.txt."
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete-asset "$TAG" "GR2_${CASE}.zip" -y -R "$GITHUB_REPOSITORY" 2>/dev/null || true
+            gh release delete-asset "$TAG" "GR2_${CASE}-PARTIAL.zip" -y -R "$GITHUB_REPOSITORY" 2>/dev/null || true
+            gh release upload "$TAG" "$RUNNER_TEMP/$FILE" --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$RUNNER_TEMP/$FILE" -R "$GITHUB_REPOSITORY" --title "GR2 package: $PAYLOAD ${START:0:10}" --notes "$NOTES"
+          fi
+          echo "built $FILE" >> "$GITHUB_STEP_SUMMARY"
