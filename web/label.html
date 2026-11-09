@@ -412,7 +412,9 @@ $("fcsv").onclick = () => { const d = finalDoc(); download(`final_${d.case_id}.c
   IDX = await (await fetch("data/index.json?" + Date.now())).json();
   $("case").innerHTML += IDX.cases.filter(c => c.pad).map(c =>
     `<option value="${c.id}">${c.start.slice(0, 10)} ${esc(c.payload)} (${esc(c.pad)})</option>`).join("");
-  const want = decodeURIComponent(location.hash.slice(1));
+  // the case to open: ?case=<id> (survives Excel/Office, which drops the part after "#" when it
+  // opens a link) or the older #<id>
+  const want = new URLSearchParams(location.search).get("case") || decodeURIComponent(location.hash.slice(1));
   if (want && IDX.cases.some(c => c.id === want)) { $("case").value = want; openCase(want); }
 })();
 if (typeof module !== "undefined") module.exports = {volumesOf, readSheet, compareStats, mergeSheets, kappa};
