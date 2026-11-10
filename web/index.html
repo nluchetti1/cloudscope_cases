@@ -51,7 +51,7 @@
   <button id="m-mrms" class="on">MRMS</button><button id="m-kmlb">KMLB hybrid</button>
   <label class="btn">Load LWO workbook<input id="wb" type="file" accept=".xlsx,.xlsm" hidden></label>
   <span id="wbnote" class="note">Loaded on this computer only — nothing is uploaded.</span>
-  <span>Connectivity (LLCCR 35):</span><button id="k-off" class="on">Off</button><button id="k-cu" title="Connected cumulus evaluated as one cloud">Cumulus</button><button id="k-ca" title="Plus 4.3b: a detached anvil in 3-D contact with cumulus colder than -10 C is assessed as attached">Cumulus + anvil 4.3b</button>
+  <span>Connectivity (LLCCR 35):</span><button id="k-off">Off</button><button id="k-cu" class="on" title="Connected cumulus evaluated as one cloud (the adopted default)">Cumulus</button><button id="k-ca" title="Plus 4.3b: a detached anvil in 3-D contact with cumulus colder than -10 C is assessed as attached">Cumulus + anvil 4.3b</button>
   <span>Clouds:</span><button id="c-all" class="on">All rules</button><button id="c-ml">Most likely</button>
   <label class="note"><input id="o-watch" type="checkbox" checked> Show watch</label>
   <label class="note"><input id="o-conf" type="checkbox" checked> Mark close calls</label>
@@ -117,7 +117,7 @@ const NOT_EVALUATED = /debris|disturbed|smoke|tribo|pcpn|precip|solar/i;
 const OVERALL = {key: "overall", label: "Overall", overall: true};
 const ALL_RULES = [OVERALL].concat(RULES);
 let IDX = null, SUM = {}, CASE = null, LWO = null, FLAGS = null, MODE = "mrms", THR = 1000, SEL = null, REPLAYS = {};
-let CLOUDS = "all", SHOW_WATCH = true, SHOW_CONF = true, CONN = "";
+let CLOUDS = "all", SHOW_WATCH = true, SHOW_CONF = true, CONN = "_c";   // cumulus merging: the adopted default
 // the verdicts in use, per radar: no connectivity ("mrms"), LLCCR 35 cumulus merging ("mrms_c"), or
 // cumulus merging plus 4.3b with 3-D contact ("mrms_ca"); a case scored before a setting existed
 // falls back to the verdicts without connectivity, with a note
