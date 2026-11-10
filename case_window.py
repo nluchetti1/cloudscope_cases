@@ -6,11 +6,17 @@ import sys
 import pandas as pd
 
 
-def window(case_id, path="countdown_pads.csv"):
+def window(case_id, path="countdown_pads.csv", custom="custom_cases.csv"):
+    import os
     W = pd.read_csv(path, parse_dates=["start", "end"])
     W = W[W.match.isin(["good", "test"])].drop_duplicates(subset=["start", "end", "payload", "pad"])
     pad = W["pad"].where(W["pad"].notna(), "TEST").astype(str).str.replace("-", "")
     W["id"] = W.start.dt.strftime("%Y%m%d_%H%M") + "_" + pad
+    if os.path.exists(custom):                  # custom windows: ids end in C
+        X = pd.read_csv(custom, parse_dates=["start", "end"])
+        if len(X):
+            X["id"] = X.start.dt.strftime("%Y%m%d_%H%M") + "_" + X["pad"].astype(str).str.replace("-", "") + "C"
+            W = pd.concat([W, X], ignore_index=True)
     r = W[W["id"] == case_id]
     if r.empty:
         raise SystemExit(f"no case {case_id!r}")

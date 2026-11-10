@@ -31,6 +31,7 @@ def main():
         start = dt.datetime.fromisoformat(c["start"])
         mins = [int((dt.datetime.fromisoformat(t) - start).total_seconds() // 60) for t in c["frames"]]
         index.append({k: c[k] for k in ("id", "start", "end", "vehicle", "payload", "pad", "pad_scored", "launched")}
+                     | {"custom": bool(c.get("custom", False))}
                      | {"frames": len(c["frames"]), "skipped": len(c["skipped"]),
                         "kmlb_full": sum(1 for k in c["kmlb_info"] if k[3] == "full")})
         if c["pad_scored"] in c["pads"]:

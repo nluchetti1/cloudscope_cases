@@ -26,6 +26,8 @@ cloudscope_cases/
 ├── replay_run.py              radar replay of one case (live-viewer frames, one per KMLB volume)
 ├── replay_publish.py          adds a replay to the site, keeps the newest 20
 ├── case_window.py             a case's evaluation window, for the GR2 package
+├── custom_cases.csv           custom windows requested from the case page (ids end in C)
+├── custom_request.py          validates a custom-case request and adds it to custom_cases.csv
 ├── replay_engine/             the LIVE KMLB page's mrms_classify.py (v23) + kmlb_classify.py,
 │                              and viewer.html (the live page with a replay mode)
 ├── .github/workflows/cases.yml
@@ -83,6 +85,18 @@ Limits: radar sees precipitation only (cloud joined by non-precipitating cloud i
 4.3b's "or had at any time" uses the current frame. Every frame is scored six ways - MRMS and the
 hybrid, each with no connectivity, cumulus merging (_c), and cumulus merging + 4.3b (_ca) - and
 the case page's "Connectivity" switch chooses between them, statistics included.
+
+## Custom cases
+Any pad and window (UTC, up to 8 hours, from 14 Oct 2020 to an hour ago) can be scored like a
+logged countdown - e.g. a 2026 case. The case page's "+ Custom case" form opens an issue titled
+"Custom case" with pad / start / end / name lines; .github/workflows/custom.yml (owner's issues only,
+or run by hand) validates it (custom_request.py), adds it to custom_cases.csv, scores it and
+publishes it. Custom case ids end in C (20260314_1800_SLC40C). They are tagged "custom", listed under
+the Custom filter, left out of the LWO statistics, re-scored by full re-scores, and their radar
+replay + GR2 package is requested like any other case's.
+For 2026 cases: run cape_glm for the 2026 months first (GLM, else NLDN only); the field-mill
+minute archive covers the logged windows only, so custom cases show no field-mill data in the lanes
+(the GR2 package has mills, from the KSC archive).
 
 ## Notes
 - Field mills: the rule is applied in the page from each pad's 15-minute peak |E|, so its threshold

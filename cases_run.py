@@ -55,19 +55,27 @@ FM_SITES = {1: (28.70363, -80.66857), 2: (28.68755, -80.71951), 4: (28.66433, -8
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(processName)s %(message)s")
 
 
-def case_id(start, pad):
+def case_id(start, pad, custom=False):
     pad = pad if isinstance(pad, str) and pad else "TEST"
-    return f"{start:%Y%m%d_%H%M}_{pad.replace('-', '')}"
+    return f"{start:%Y%m%d_%H%M}_{pad.replace('-', '')}" + ("C" if custom else "")   # C: a custom case
+
+
+CUSTOM_CSV = "custom_cases.csv"         # windows requested from the case page ("+ Custom case")
 
 
 def load_windows(path="countdown_pads.csv"):
+    """The logged countdown windows, plus any custom windows (match == "custom", ids ending in C)."""
     import pandas as pd
     W = pd.read_csv(path, parse_dates=["start", "end"])
-    W = W[W.match.isin(["good", "test"])].copy()
+    if os.path.exists(CUSTOM_CSV):
+        X = pd.read_csv(CUSTOM_CSV, parse_dates=["start", "end"])
+        if len(X):
+            W = pd.concat([W, X.assign(match="custom")], ignore_index=True)
+    W = W[W.match.isin(["good", "test", "custom"])].copy()
     # identical repeated log rows (Starlink 8-19, 18 Oct 2024, is in the workbook twice): keep one
     W = W.drop_duplicates(subset=["start", "end", "payload", "pad"], keep="first")
     W["pad"] = W["pad"].astype(object).where(W["pad"].notna(), None)     # test countdowns: no pad
-    W["id"] = [case_id(s, p) for s, p in zip(W.start, W["pad"])]
+    W["id"] = [case_id(s, p, m == "custom") for s, p, m in zip(W.start, W["pad"], W.match)]
     return W
 
 
@@ -153,7 +161,8 @@ def score_window(w, fms):
         t += datetime.timedelta(minutes=STEP_MIN)
     case = {"id": w["id"], "start": w["start"].isoformat(), "end": w["end"].isoformat(), "vehicle": w["vehicle"],
             "payload": w["payload"], "pad": w["pad"], "pad_scored": PAD_ALIAS.get(w["pad"], w["pad"]),
-            "launched": bool(w.get("launched_this_count", False)), "pads": pads, "rule_keys": mc.RULE_KEYS,
+            "launched": bool(w.get("launched_this_count", False)) if w.get("match") != "custom" else False,
+            "custom": w.get("match") == "custom", "pads": pads, "rule_keys": mc.RULE_KEYS,
             "feat_names": CR.FEAT_NAMES, "frames": [], "mrms": [], "kmlb": [], "mrms_c": [], "kmlb_c": [], "mrms_ca": [], "kmlb_ca": [], "fm5": [], "fm7": [],
             "kmlb_info": [], "glm": [], "skipped": []}
     # six verdicts per frame, each radar: no connectivity; LLCCR 35 cumulus merging ("_c"); and
