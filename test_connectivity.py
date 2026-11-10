@@ -21,12 +21,13 @@ def put(F, m, levels, comp=25.0, hmax=3000.0):
         if k in levels: F[k][m] = 20.0
     F["comp"][m] = comp; F["hmax"][m] = hmax
 z0 = np.full((200, 200), 4800.0, np.float32)
+DEFAULTS = (mc.CONNECT_CUMULUS, mc.CONNECT_ANVIL_43B)
 def run(F, sep=None, hist=None, cu=False, anvil=False):
     mc.CONNECT_CUMULUS, mc.CONNECT_ANVIL_43B = cu, anvil
     try:
         st, red, yel, cls, top, diag = mc.evaluate(F, z0, LA, LO, hist, None, sep, None, None)
     finally:
-        mc.CONNECT_CUMULUS = mc.CONNECT_ANVIL_43B = False
+        mc.CONNECT_CUMULUS, mc.CONNECT_ANVIL_43B = DEFAULTS
     return {k: bool(v[jp, ip]) for k, v in red.items()}, diag
 
 core = (np.abs(nm_e - 12) <= 1.0) & (np.abs(nm_n) <= 1.0)
@@ -66,5 +67,7 @@ _, d4 = run(Fc, hist=hist, anvil=True)
 print(f"   touching case: off detached {share(d3, 'detached'):.0%}; 4.3b on attached {share(d4, 'attached'):.0%}")
 check(share(d3, "detached") > 0.9 and share(d4, "attached") > 0.9, "4c: anvil reaching down to the cumulus top - physically connected, assessed as attached")
 print("5. defaults")
-check(mc.CONNECT_CUMULUS is False and mc.CONNECT_ANVIL_43B is False and mc.ANVIL_CONTACT_M == 1000.0, "both switches off by default; contact tolerance 1 km")
+want_on = os.environ.get("CONN_DEFAULT") == "on"          # the live, replay and hybrid-climatology copies
+check(mc.CONNECT_CUMULUS is want_on and mc.CONNECT_ANVIL_43B is False and mc.ANVIL_CONTACT_M == 1000.0,
+      f"defaults: cumulus merging {'on' if want_on else 'off'}, 4.3b off, contact tolerance 1 km")
 print(f"\n{len(FAILS)} failure(s)"); sys.exit(1 if FAILS else 0)
