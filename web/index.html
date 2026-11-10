@@ -60,10 +60,20 @@
 </div>
 <div class="wrap">
   <aside>
+    <button id="cc-open" style="width:100%;margin-bottom:8px">+ Custom case</button>
+    <div id="cc-form" class="panel hidden" style="padding:10px">
+      <div class="note" style="margin-bottom:6px">Any pad and window (UTC), scored like a logged countdown - e.g. a 2026 case.
+        Opens a pre-filled GitHub issue; submit it and the case appears here in ~15-30 min.</div>
+      <label class="note">Pad <select id="cc-pad"></select></label><br>
+      <label class="note">Start (UTC) <input id="cc-start" type="datetime-local"></label><br>
+      <label class="note">End (UTC) <input id="cc-end" type="datetime-local"></label><br>
+      <label class="note">Name <input id="cc-name" placeholder="e.g. Starlink 12-30" style="width:100%"></label>
+      <p style="margin:8px 0 0"><button id="cc-go">Open the request</button> <span id="cc-err" class="note" style="color:var(--yellow)"></span></p>
+    </div>
     <input id="q" type="search" placeholder="Search payload, vehicle, date…">
     <div class="filters">
       <select id="f-year"><option value="">All years</option></select>
-      <select id="f-out"><option value="">All outcomes</option><option value="1">Launched</option><option value="0">Scrubbed / delayed</option><option value="t">Tests</option></select>
+      <select id="f-out"><option value="">All outcomes</option><option value="1">Launched</option><option value="0">Scrubbed / delayed</option><option value="t">Tests</option><option value="c">Custom</option></select>
     </div>
     <div id="count" class="note"></div>
     <div id="list"></div>
@@ -264,12 +274,12 @@ function renderList() {
   const q = $("q").value.toLowerCase(), y = $("f-year").value, o = $("f-out").value;
   const rows = IDX.cases.filter(c => (!q || `${c.payload} ${c.vehicle} ${c.start}`.toLowerCase().includes(q))
     && (!y || c.start.startsWith(y))
-    && (!o || (o === "t" ? !c.pad : o === "1" ? c.launched : (c.pad && !c.launched))));
+    && (!o || (o === "c" ? c.custom : o === "t" ? !c.pad : o === "1" ? (c.launched && !c.custom) : (c.pad && !c.launched && !c.custom))));
   $("count").textContent = `${rows.length} of ${IDX.cases.length} countdowns`;
   $("list").innerHTML = rows.map(c => {
     const lw = caseLWORules(c);
     return `<div class="case${c.id === SEL ? " sel" : ""}" data-id="${c.id}"><b>${esc(c.payload)}</b>
-      <span class="chip">${esc(c.pad || "test")}</span>${c.launched ? "" : `<span class="chip">${c.pad ? "no launch" : "test"}</span>`}
+      <span class="chip">${esc(c.pad || "test")}</span>${c.custom ? `<span class="chip l">custom</span>` : c.launched ? "" : `<span class="chip">${c.pad ? "no launch" : "test"}</span>`}
       ${lw.map(l => `<span class="chip l">${esc(l)}</span>`).join("")}
       <small>${esc(c.vehicle)} · ${c.start.slice(0, 16).replace("T", " ")}Z – ${c.end.slice(11, 16)}Z</small></div>`;
   }).join("");
@@ -293,7 +303,7 @@ function renderCase() {
   $("case-head").innerHTML = `<div style="float:right">${replayButton(c)}</div><h2>${esc(c.payload)} <span class="note">${esc(c.vehicle)}</span></h2>
     ${ymd(a)} · window ${hhmm(a)}–${hhmm(b)}Z · pad ${esc(c.pad || "test countdown — scored at LC-39A")}
     ${c.pad_scored && c.pad_scored !== c.pad ? `(scored at ${esc(c.pad_scored)})` : ""} ·
-    ${c.launched ? "launched at the window end" : (c.pad ? "no launch on this count" : "test")}
+    ${c.custom ? "custom case - not in the LWO log" : c.launched ? "launched at the window end" : (c.pad ? "no launch on this count" : "test")}
     ${c.skipped.length ? ` · <span style="color:var(--yellow)">${c.skipped.length} frame(s) missing data</span>` : ""}
     ${CONN && !(c["mrms" + CONN] && c["mrms" + CONN].length) ? ` · <span style="color:var(--yellow)">scored before this connectivity setting existed - showing the verdicts without connectivity (re-run the case replays with rerun checked)</span>` :
       CONN ? ` · connectivity (LLCCR 35): ${CONN_LABEL[CONN]}` : ""}`;
@@ -422,7 +432,7 @@ function computeStats(mode) {
   const out = {}, dis = [], scrub = {red: 0, n: 0};
   for (const r of ALL_RULES) out[r.key] = {cd: [0, 0, 0, 0], fr: [0, 0, 0, 0], lag: []};   // a b c d
   for (const c of IDX.cases) {
-    const s0 = SUM[c.id]; if (!s0 || !c.pad) continue;
+    const s0 = SUM[c.id]; if (!s0 || !c.pad || c.custom) continue;   // custom cases have no log to compare
     const s = Object.assign({}, s0, {[mode]: s0[vk(mode, s0)]});
     const a = utc(c.start), b = utc(c.end), T = s.m.map(m => a + m * 60000);
     const ML = mostLikely(s[mode]), fl = flagsFor(c);
@@ -452,7 +462,7 @@ function computeStats(mode) {
     if (disagree) dis.push([disagree * 2, c]);
   }
   dis.sort((x, y) => y[0] - x[0]);
-  const checks = IDX.cases.filter(c => c.pad).map(c => [c, logCheck(c)]).filter(x => x[1].length);
+  const checks = IDX.cases.filter(c => c.pad && !c.custom).map(c => [c, logCheck(c)]).filter(x => x[1].length);
   return {out, dis, scrub, checks};
 }
 function scores([a, b, c, d]) {
@@ -523,6 +533,33 @@ $("wb").onchange = async e => {
     renderList(); if (CASE) renderCase(); if (!$("stats-view").classList.contains("hidden")) renderStats();
   } catch (err) { $("wbnote").textContent = `Could not read the workbook: ${err.message}`; }
 };
+// ---- custom case request: a pre-filled GitHub issue the "Custom case" workflow reads -----------
+const CC_PADS = ["LC-39A", "LC-39B", "SLC-40", "SLC-41", "SLC-37B", "SLC-46", "LC-36", "SLC-20", "LZ-1"];
+function customURL(pad, start, end, name) {
+  const body = `Scores this window like a logged countdown (custom case - not compared with the LWO log).\n\n` +
+    `pad: ${pad}\nstart: ${start.replace("T", " ")}\nend: ${end.replace("T", " ")}\nname: ${name}\n\n` +
+    `Submit this issue as it is (times are UTC). The link is posted here when the case is ready.`;
+  return `${repoURL()}/issues/new?title=${encodeURIComponent("Custom case: " + (name || pad + " " + start.slice(0, 10)))}&body=${encodeURIComponent(body)}`;
+}
+function customCheck(start, end) {
+  if (!start || !end) return "Enter start and end.";
+  const a = Date.parse(start + "Z"), b = Date.parse(end + "Z");
+  if (!(b > a)) return "End must be after start.";
+  if (b - a > 8 * 3600e3) return "At most 8 hours.";
+  if (a < Date.parse("2020-10-14T00:00Z")) return "The archive starts 14 Oct 2020.";
+  if (b > Date.now() - 3600e3) return "The window must have ended at least an hour ago.";
+  return "";
+}
+
+// wired after CC_PADS / customURL / customCheck exist (using them earlier stopped the whole page)
+$("cc-pad").innerHTML = CC_PADS.map(p => `<option>${p}</option>`).join("");
+$("cc-open").onclick = () => $("cc-form").classList.toggle("hidden");
+$("cc-go").onclick = () => {
+  const st = $("cc-start").value, en = $("cc-end").value, err = customCheck(st, en);
+  $("cc-err").textContent = err; if (err) return;
+  window.open(customURL($("cc-pad").value, st, en, $("cc-name").value.trim()), "_blank", "noopener");
+};
+
 async function boot() {
   IDX = await (await fetch("data/index.json?" + Date.now())).json();
   try { SUM = await (await fetch("data/summary.json?" + Date.now())).json(); } catch (e) { SUM = {}; }
