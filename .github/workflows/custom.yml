@@ -1,0 +1,134 @@
+name: Custom case
+
+# Scores any pad and time window like a logged countdown - for cases outside the LWO log (2026, a
+# day without a launch...). Started by the case page's "+ Custom case" form, which opens an issue
+# titled "Custom case" with lines "pad:", "start:", "end:", "name:" (UTC) - only issues the repo owner
+# opens run it - or by hand here. The window is added to custom_cases.csv (ids end in C), scored,
+# and published; the case page then offers its radar replay + GR2 package like any other case.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      pad: { description: "Pad, e.g. SLC-40", required: true }
+      start: { description: "Start, UTC (YYYY-MM-DD HH:MM)", required: true }
+      end: { description: "End, UTC (YYYY-MM-DD HH:MM)", required: true }
+      name: { description: "A name for the case", required: false, default: "" }
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency: { group: custom-cases, cancel-in-progress: false }   # one at a time: each edits custom_cases.csv
+
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.issue.title, 'Custom case') && github.event.issue.user.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.req.outputs.id }}
+      month: ${{ steps.req.outputs.month }}
+      name: ${{ steps.req.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -q pandas
+      - id: req
+        env:
+          BODY: ${{ github.event.issue.body }}
+          IN_PAD: ${{ inputs.pad }}
+          IN_START: ${{ inputs.start }}
+          IN_END: ${{ inputs.end }}
+          IN_NAME: ${{ inputs.name }}
+        run: |
+          if [ -n "$IN_PAD" ]; then
+            python custom_request.py --pad "$IN_PAD" --start "$IN_START" --end "$IN_END" ${IN_NAME:+--name "$IN_NAME"}
+          else
+            python custom_request.py
+          fi
+      - name: Commit the window to custom_cases.csv
+        run: |
+          git config user.name "cloudscope-bot"; git config user.email "actions@users.noreply.github.com"
+          git add custom_cases.csv
+          git diff --cached --quiet || git commit -qm "Custom case ${{ steps.req.outputs.id }}"
+          git push -q
+
+  score:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ github.ref_name }}" }          # includes the window just committed
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - name: Install eccodes (pygrib needs the C library)
+        timeout-minutes: 15
+        run: |
+          APT="-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get $APT update -qq &&
+            sudo timeout 240 apt-get $APT install -y -qq libeccodes0 libeccodes-dev && exit 0
+            echo "apt attempt $i failed or hung; retrying in 20 s"; sleep 20
+          done
+          exit 1
+      - run: pip install -r requirements.txt
+      - run: python cases_run.py "${{ needs.plan.outputs.month }}" --only "${{ needs.plan.outputs.id }}" --procs 1 --out out
+      - uses: actions/upload-artifact@v4
+        with: { name: "custom-${{ needs.plan.outputs.id }}", path: out/*.json, retention-days: 3 }
+
+  publish:
+    needs: [plan, score]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency: { group: gh-pages-publish, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ github.ref_name }}" }
+      - uses: actions/checkout@v4
+        continue-on-error: true
+        with: { ref: gh-pages, path: site }
+      - uses: actions/download-artifact@v4
+        with: { name: "custom-${{ needs.plan.outputs.id }}", path: out }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: |
+          mkdir -p site/data/cases
+          python cases_merge.py --inp out --site site
+          cp web/index.html site/index.html; cp web/label.html site/label.html; touch site/.nojekyll
+      - name: Publish
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          cd site
+          rm -rf .git
+          git init -q && git checkout -q -b gh-pages
+          git add -A
+          git -c user.name="cloudscope-bot" -c user.email="actions@users.noreply.github.com" \
+            commit -qm "Custom case ${{ needs.plan.outputs.id }} $(date -u '+%Y-%m-%d %H:%MZ')"
+          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+  notify:
+    needs: [plan, score, publish]
+    if: always() && github.event_name == 'issues' && needs.plan.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N: ${{ github.event.issue.number }}
+          ID: ${{ needs.plan.outputs.id }}
+          OK: ${{ needs.publish.result == 'success' }}
+          PLAN: ${{ needs.plan.result }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SITE="https://$(echo "$OWNER" | tr 'A-Z' 'a-z').github.io/$REPO"
+          if [ "$OK" = "true" ]; then
+            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "Custom case ready: $SITE/#$ID (Pages may take a minute or two). For maps and a GR2 package, use \"Request radar replay + GR2 package\" on that case."
+            gh issue close "$N" -R "$GITHUB_REPOSITORY"
+          elif [ "$PLAN" = "failure" ]; then
+            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "Couldn't read the request - check pad / start / end (UTC, YYYY-MM-DD HH:MM, at most 8 hours, ended at least an hour ago). Details: $RUN"
+          else
+            gh issue comment "$N" -R "$GITHUB_REPOSITORY" --body "The custom case failed - see $RUN"
+          fi

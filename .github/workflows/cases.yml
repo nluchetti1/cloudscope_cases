@@ -46,6 +46,11 @@ jobs:
           W = W[W.match.isin(["good", "test"])].drop_duplicates(subset=["start", "end", "payload", "pad"])
           pad = W["pad"].where(W["pad"].notna(), "TEST").astype(str).str.replace("-", "")
           W["id"] = W.start.dt.strftime("%Y%m%d_%H%M") + "_" + pad
+          if os.path.exists("custom_cases.csv"):          # custom windows (ids end in C) are re-scored too
+              X = pd.read_csv("custom_cases.csv", parse_dates=["start"])
+              if len(X):
+                  X["id"] = X.start.dt.strftime("%Y%m%d_%H%M") + "_" + X["pad"].astype(str).str.replace("-", "") + "C"
+                  W = pd.concat([W, X], ignore_index=True)
           W["ym"] = W.start.dt.strftime("%Y-%m")
           have = {os.path.basename(f)[:-5] for f in glob.glob("site/data/cases/*.json")}
           rerun = os.environ.get("RERUN", "false").lower() == "true"
