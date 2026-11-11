@@ -65,8 +65,10 @@
       <div class="note" style="margin-bottom:6px">Any pad and window (UTC), scored like a logged countdown - e.g. a 2026 case.
         Opens a pre-filled GitHub issue; submit it and the case appears here in ~15-30 min.</div>
       <label class="note">Pad <select id="cc-pad"></select></label><br>
-      <label class="note">Start (UTC) <input id="cc-start" type="datetime-local"></label><br>
-      <label class="note">End (UTC) <input id="cc-end" type="datetime-local"></label><br>
+      <label class="note">Date, <b>UTC</b> <input id="cc-date" type="date"></label><br>
+      <label class="note">Start, <b>UTC</b> 24 h <input id="cc-start" placeholder="18:00" size="5" maxlength="5" inputmode="numeric"></label>
+      <label class="note">End, <b>UTC</b> 24 h <input id="cc-end" placeholder="20:00" size="5" maxlength="5" inputmode="numeric"></label><br>
+      <div id="cc-preview" class="note" style="margin:4px 0"></div>
       <label class="note">Name <input id="cc-name" placeholder="e.g. Starlink 12-30" style="width:100%"></label>
       <p style="margin:8px 0 0"><button id="cc-go">Open the request</button> <span id="cc-err" class="note" style="color:var(--yellow)"></span></p>
     </div>
@@ -541,6 +543,30 @@ function customURL(pad, start, end, name) {
     `Submit this issue as it is (times are UTC). The link is posted here when the case is ready.`;
   return `${repoURL()}/issues/new?title=${encodeURIComponent("Custom case: " + (name || pad + " " + start.slice(0, 10)))}&body=${encodeURIComponent(body)}`;
 }
+// The form takes a UTC date and 24-hour UTC times as plain text - a browser date-time picker shows
+// local-style times, and what it sent was then read as UTC (a request went out hours off, Nov 2026).
+// An end time earlier than the start time means the next UTC day.
+function composeUTC(date, t0, t1) {
+  const hm = t => /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(t).trim());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return {err: "Choose the UTC date."};
+  const a = hm(t0), b = hm(t1);
+  if (!a || !b) return {err: "Times as HH:MM, 24-hour UTC (e.g. 18:00)."};
+  const pad = x => String(x).padStart(2, "0");
+  const start = `${date}T${pad(a[1])}:${a[2]}`;
+  let endMs = Date.parse(`${date}T${pad(b[1])}:${b[2]}Z`);
+  if (endMs <= Date.parse(start + "Z")) endMs += 86400e3;                       // crosses 00Z
+  return {start, end: new Date(endMs).toISOString().slice(0, 16)};
+}
+function localHM(isoUTC) {
+  return new Date(Date.parse(isoUTC + "Z")).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short"});
+}
+function customPreview() {
+  const c = composeUTC($("cc-date").value, $("cc-start").value, $("cc-end").value);
+  if (c.err) { $("cc-preview").textContent = c.err; return c; }
+  $("cc-preview").innerHTML = `Sends <b>${c.start.replace("T", " ")} – ${c.end.replace("T", " ")} UTC</b>` +
+    `<br>(your local time: ${localHM(c.start)} – ${localHM(c.end)})`;
+  return c;
+}
 function customCheck(start, end) {
   if (!start || !end) return "Enter start and end.";
   const a = Date.parse(start + "Z"), b = Date.parse(end + "Z");
@@ -554,10 +580,12 @@ function customCheck(start, end) {
 // wired after CC_PADS / customURL / customCheck exist (using them earlier stopped the whole page)
 $("cc-pad").innerHTML = CC_PADS.map(p => `<option>${p}</option>`).join("");
 $("cc-open").onclick = () => $("cc-form").classList.toggle("hidden");
+for (const id of ["cc-date", "cc-start", "cc-end"]) $(id).oninput = customPreview;
 $("cc-go").onclick = () => {
-  const st = $("cc-start").value, en = $("cc-end").value, err = customCheck(st, en);
+  const c = customPreview();
+  const err = c.err || customCheck(c.start, c.end);
   $("cc-err").textContent = err; if (err) return;
-  window.open(customURL($("cc-pad").value, st, en, $("cc-name").value.trim()), "_blank", "noopener");
+  window.open(customURL($("cc-pad").value, c.start, c.end, $("cc-name").value.trim()), "_blank", "noopener");
 };
 
 async function boot() {
