@@ -107,3 +107,17 @@ minute archive covers the logged windows only, so custom cases show no field-mil
 - LC-16 (Terran 1) is scored at SLC-20 (0.7 nmi away); test countdowns at LC-39A.
 - The field-mill archive has gaps (e.g. 1 Jul - 4 Aug 2022): 19 windows have no mill data at all.
   Frames without a reading are shown grey and left out of the field-mill scores.
+
+## Stratiform-deck fixes (kv01, Nov 2026)
+deck_fix.py patches a classifier copy (both stages, idempotent); test_deck.py checks it on
+hand-built storms through the 3-D volume path and, with DECK_LITE=1, the single-level path.
+From the kv01 (Vulcan, 13 Nov 2026) replay - a post-frontal elevated deck, no convection:
+- Isolated-cell rule: a small Steiner-level patch is a lone cumulus only if it is not inside a
+  large (> 380 km2) composite echo mass, or it is ROOTED (echo within ROOT_KM = 2 km of the
+  ground, or the radar blind below). kv01's false cumulus were all deck fall streaks.
+- A 3-D echo base above the Steiner level also makes echo elevated (never cumulus).
+- VII makes a convective core only in a rooted column (40 dBZ composite still does anywhere).
+- With no history, floating echo is detached anvil only if the frame has a core somewhere.
+Single-level frames (case engine, climatology) take ROOTED from MergedReflectivityQC_02.00
+(KMLB-merged on hybrid frames): echo there, or no coverage, means rooted. Verified in the archive
+2020-2026 by probe_root_level.py (16 Nov 2026).

@@ -147,18 +147,31 @@ def drift_history(prev_att, prev_t, t, wind, la, lo):
     return mc.maximum_filter(moved.astype(np.uint8), footprint=mc._disc(max(r_nm, 0.5), dlat_km, dlon_km)) > 0
 
 
-def score_window(w, fms):
-    """Every frame of one window, MRMS and hybrid. Returns the case dict."""
-    sess = CR._session()
-    pads = list(mc.SITES)
+def frames_of(w):
+    """The window's 2-minute frame times, from PRE_MIN before its start to its end."""
     t0 = (w["start"] - datetime.timedelta(minutes=PRE_MIN)).to_pydatetime().replace(second=0, microsecond=0)
     t0 -= datetime.timedelta(minutes=t0.minute % STEP_MIN)
-    t1 = w["end"].to_pydatetime()
-    frames = []
-    t = t0
+    t1, frames, t = w["end"].to_pydatetime(), [], t0
     while t <= t1:
         frames.append(t)
         t += datetime.timedelta(minutes=STEP_MIN)
+    return frames
+
+
+PER_FRAME_KEYS = ("frames", "mrms", "kmlb", "mrms_c", "kmlb_c", "mrms_ca", "kmlb_ca", "fm5", "fm7", "kmlb_info", "glm", "skipped")
+
+
+def score_window(w, fms, i0=0, i1=None):
+    """Frames i0..i1 of one window (all by default), MRMS and hybrid. Returns the case dict.
+    Scoring starts one frame before i0 and discards it: the detached-anvil history carries over from
+    the previous frame only, so a chunk scored this way is identical to the same frames scored in
+    sequence - which lets one window be split across processes (see main)."""
+    sess = CR._session()
+    pads = list(mc.SITES)
+    allf = frames_of(w)
+    i1 = len(allf) if i1 is None else i1
+    first = max(0, i0 - 1)
+    frames = allf[first:i1]
     case = {"id": w["id"], "start": w["start"].isoformat(), "end": w["end"].isoformat(), "vehicle": w["vehicle"],
             "payload": w["payload"], "pad": w["pad"], "pad_scored": PAD_ALIAS.get(w["pad"], w["pad"]),
             "launched": bool(w.get("launched_this_count", False)) if w.get("match") != "custom" else False,
@@ -172,16 +185,26 @@ def score_window(w, fms):
     prev = {k: (None, None) for k, _ in VARIANTS}
     z0, z0_t, kcache, satc, windc = None, None, {}, {}, {}
     pool = cf.ThreadPoolExecutor(max_workers=4)
-    for t in frames:
+    t_go = time.monotonic()
+    for n, t in enumerate(frames):
+        keep = first + n >= i0                      # the warm-up frame is scored, not recorded
+        done = first + n - i0
+        if keep and done and done % 10 == 0:
+            rate = (time.monotonic() - t_go) / (n or 1)
+            logging.info(f"{w['id']} frames {i0}-{i1}: {done}/{i1 - i0} done, {rate:.0f} s per frame, "
+                         f"~{rate * (i1 - i0 - done) / 60:.0f} min left")
         try:
             urls = {k: CR.nearest(sess, p, t, CR.MATCH_MIN) for k, p in CR.ARCHIVE.items()}
             gone = [k for k in mc.ESSENTIAL if urls.get(k) is None] + (["cg"] if urls.get("cg") is None else [])
             if gone:
-                case["skipped"].append([t.isoformat(), f"missing {gone}"])
+                if keep:
+                    case["skipped"].append([t.isoformat(), f"missing {gone}"])
                 continue
             futs = {k: pool.submit(CR.fetch, sess, u, mc.PRODUCTS[k][1]) for k, u in urls.items() if u}
             su = CR.nearest(sess, CR.STEINER_DIR, t, CR.MATCH_MIN)
             sfut = pool.submit(CR.fetch, sess, su, -999.0) if su else None
+            ru = CR.nearest(sess, CR.ROOT_DIR, t, CR.MATCH_MIN)           # 2 km level: the rooted test
+            rfut = pool.submit(CR.fetch, sess, ru, -999.0) if ru else None
             hit = CR.kmlb_nearest(sess, t)
             if hit and hit[1] not in kcache:
                 kcache.clear()                                  # one volume serves 2-3 frames
@@ -200,6 +223,7 @@ def score_window(w, fms):
                     z0, z0_t = CR.fetch(sess, zu, None)[0], t
             zz = z0 if z0 is not None else np.full((la.size, lo.size), 4800.0, np.float32)
             lvl = sfut.result()[0] if sfut is not None else None
+            root = rfut.result()[0] if rfut is not None else None
             sk, wk = t.replace(minute=t.minute - t.minute % SAT_CACHE_MIN), t.replace(minute=0)
             if sk not in satc:
                 try:
@@ -221,11 +245,12 @@ def score_window(w, fms):
             rec = {}
             for mode, conn in VARIANTS:
                 Fm = {k: v.copy() for k, v in F.items()}
-                L = lvl
+                L, R = lvl, root
                 if mode.startswith("kmlb") and kf is not None:
                     kf.apply_fields(Fm)
                     L = kf.merge_level(lvl, CR.STEINER_KM) if lvl is not None else None
-                sep = mc.separation_lite(L, CR.STEINER_KM, la, lo) if L is not None else None
+                    R = kf.merge_level(root, CR.ROOT_KM) if root is not None else None
+                sep = mc.separation_lite(L, CR.STEINER_KM, la, lo, Fm["comp"], R) if L is not None else None
                 hist = drift_history(*prev[mode], t, wind, la, lo)
                 mc.CONNECT_CUMULUS, mc.CONNECT_ANVIL_43B = conn
                 try:
@@ -234,6 +259,8 @@ def score_window(w, fms):
                     mc.CONNECT_CUMULUS = mc.CONNECT_ANVIL_43B = False
                 prev[mode] = ((cls == 6), t)
                 rec[mode] = pad_values(status, red, yel, cls, diag, la, lo, ltg_nm, pads)
+            if not keep:
+                continue
             fm = fms.peaks(t)
             case["frames"].append(t.isoformat())
             for k, _ in VARIANTS:
@@ -243,10 +270,30 @@ def score_window(w, fms):
             case["kmlb_info"].append([ki.get("volume"), ki.get("top_deg"), ki.get("lc39a_top_km"), ki.get("mode", "none")])
             case["glm"].append(bool(glm_ok))
         except Exception as e:
-            case["skipped"].append([t.isoformat(), f"{type(e).__name__}: {str(e)[:120]}"])
+            if keep:
+                case["skipped"].append([t.isoformat(), f"{type(e).__name__}: {str(e)[:120]}"])
             logging.warning(f"{w['id']} {t:%H:%MZ}: {type(e).__name__}: {e}")
     pool.shutdown()
     return case
+
+
+def score_chunk(w, i0, i1):
+    """One process's share of a window split across processes."""
+    return score_window(w, FieldMills(), i0, i1)
+
+
+def stitch(parts):
+    """Chunks of one window, in order -> one case dict."""
+    case = dict(parts[0])
+    for k in PER_FRAME_KEYS:
+        case[k] = [x for p in parts for x in p[k]]
+    return case
+
+
+def write_case(w, case, out, secs):
+    with open(os.path.join(out, f"{w['id']}.json"), "w") as f:
+        json.dump(case, f, separators=(",", ":"))
+    logging.info(f"{w['id']} {w['payload']}: {len(case['frames'])} frames, {len(case['skipped'])} skipped, {secs:.0f} s")
 
 
 def do_windows(rows, out):
@@ -276,6 +323,22 @@ def main():
     rows = [r for _, r in W.iterrows()]
     logging.info(f"{a.month}: {len(rows)} windows")
     if not rows:
+        return
+    if len(rows) < a.procs:
+        # fewer windows than processes (a custom case, a single re-run): split each window's frames
+        # into contiguous chunks across the processes instead of leaving them idle
+        for w in rows:
+            n = len(frames_of(w)); k = max(1, min(a.procs, n // 4))
+            cuts = [round(i * n / k) for i in range(k + 1)]
+            tasks = [(w, cuts[i], cuts[i + 1]) for i in range(k)]
+            logging.info(f"{w['id']}: {n} frames over {k} processes")
+            t0 = time.monotonic()
+            if k == 1:
+                parts = [score_chunk(*tasks[0])]
+            else:
+                with mp.get_context("spawn").Pool(k) as pool:
+                    parts = pool.starmap(score_chunk, tasks)
+            write_case(w, stitch(parts), a.out, time.monotonic() - t0)
         return
     k = max(1, min(a.procs, len(rows)))
     chunks = [rows[i::k] for i in range(k)]

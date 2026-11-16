@@ -100,6 +100,9 @@ ARCHIVE = {
 }
 UNUSED = ("high", "et18")                       # fetched live for display only
 STEINER_DIR, STEINER_KM = "MergedReflectivityQC_03.00", 3.0
+# The ROOTED test (deck fix, kv01 Nov 2026): echo at 2.0 km, or no coverage there, means the column
+# reaches within 2 km of the ground. Probe 16 Nov 2026: in the archive 2020-2026, same format as 03.00.
+ROOT_DIR, ROOT_KM = "MergedReflectivityQC_02.00", 2.0
 GOES_SWITCH = datetime.datetime(2025, 4, 7)
 GOES_BUCKETS = ("https://noaa-goes16.s3.amazonaws.com", "https://noaa-goes19.s3.amazonaws.com")
 # GOES GLM total lightning (intracloud and cloud-to-cloud as well as cloud-to-ground) for rule
@@ -420,6 +423,8 @@ def score_hours(hours):
             gfut = pool.submit(glm_flashes, sess, t)
             su = nearest(sess, STEINER_DIR, t, MATCH_MIN)
             sfut = pool.submit(fetch, sess, su, -999.0) if su else None
+            ru = nearest(sess, ROOT_DIR, t, MATCH_MIN)
+            rfut = pool.submit(fetch, sess, ru, -999.0) if ru else None
             F, la, lo = {}, None, None
             for k, f in futs.items():
                 fld, fla, flo, _ = f.result()
@@ -449,9 +454,11 @@ def score_hours(hours):
             sep = None
             if sfut is not None:
                 lvl, _, _, _ = sfut.result()
+                root = rfut.result()[0] if rfut is not None else None
                 if kf is not None:
                     lvl = kf.merge_level(lvl, STEINER_KM)
-                sep = mc.separation_lite(lvl, STEINER_KM, la, lo)
+                    root = kf.merge_level(root, ROOT_KM) if root is not None else None
+                sep = mc.separation_lite(lvl, STEINER_KM, la, lo, F["comp"], root)
             wind = wfut.result()
             history = None
             if prev_att is not None and (t - prev_t) <= datetime.timedelta(hours=1, minutes=5):

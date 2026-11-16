@@ -14,7 +14,7 @@ VAL = {"comp": 45.0, "r0": 30.0, "r5": 28.0, "r10": 25.0, "r15": 22.0, "r20": 20
 def fetch(sess, url, fill):
     prod = url.split("/")[2]
     if prod.startswith("Model_0degC"): f = np.full((200, 200), 4800.0, np.float32)
-    elif prod.startswith("MergedReflectivityQC_03"): f = np.where(ST, 25.0, -99.0).astype(np.float32)
+    elif prod.startswith("MergedReflectivityQC_"): f = np.where(ST, 25.0, -99.0).astype(np.float32)
     elif prod.startswith("NLDN"): f = np.full((200, 200), -1.0, np.float32)
     else:
         k = next(k for k, p in CR.ARCHIVE.items() if p == prod)
@@ -61,6 +61,11 @@ check(trunc and all(case["mrms"][i]["feat"][p] == case["kmlb"][i]["feat"][p] for
 check(len(LOADS) <= n // 2 + 2, f"KMLB volumes loaded {len(LOADS)} times for {n} frames (cached across frames)")
 real = fms.peaks(dt.datetime.fromisoformat(case["frames"][-1]))[5.0]
 check(case["fm5"][-1] == real and max(case["fm5"][-1]) > 0, f"field mills from the real archive: last frame 5 nmi peaks {dict(zip(case['pads'], case['fm5'][-1]))}")
+parts = [C.score_window(w, fms, 0, 6), C.score_window(w, fms, 6, 11), C.score_window(w, fms, 11, None)]
+stitched = C.stitch(parts)
+check(json.dumps(stitched, sort_keys=True) == json.dumps(case, sort_keys=True),
+      "split into 3 chunks (0-6, 6-11, 11-end) and stitched: identical to scoring in sequence")
+check([len(p["frames"]) for p in parts] == [6, 5, n - 11], f"chunk sizes {[len(p['frames']) for p in parts]} - the warm-up frames are not recorded")
 out = tempfile.mkdtemp(); C.do_windows([w], out)
 j = json.load(open(os.path.join(out, f"{w['id']}.json")))
 check(j["id"] == w["id"] and j["pad"] == j["pad_scored"] == "LC-39A" and len(j["frames"]) == 16, f"written: {os.path.getsize(os.path.join(out, w['id'] + '.json')) / 1e3:.0f} kB JSON")
