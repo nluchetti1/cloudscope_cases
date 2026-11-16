@@ -63,7 +63,7 @@
     <button id="cc-open" style="width:100%;margin-bottom:8px">+ Custom case</button>
     <div id="cc-form" class="panel hidden" style="padding:10px">
       <div class="note" style="margin-bottom:6px">Any pad and window (UTC), scored like a logged countdown - e.g. a 2026 case.
-        Opens a pre-filled GitHub issue; submit it and the case appears here in ~15-30 min.</div>
+        Opens a pre-filled GitHub issue; submitting it builds the case page, its radar replay and its GR2 package - the links are posted on the issue.</div>
       <label class="note">Pad <select id="cc-pad"></select></label><br>
       <label class="note">Date, <b>UTC</b> <input id="cc-date" type="date"></label><br>
       <label class="note">Start, <b>UTC</b> 24 h <input id="cc-start" placeholder="18:00" size="5" maxlength="5" inputmode="numeric"></label>
@@ -540,7 +540,8 @@ const CC_PADS = ["LC-39A", "LC-39B", "SLC-40", "SLC-41", "SLC-37B", "SLC-46", "L
 function customURL(pad, start, end, name) {
   const body = `Scores this window like a logged countdown (custom case - not compared with the LWO log).\n\n` +
     `pad: ${pad}\nstart: ${start.replace("T", " ")}\nend: ${end.replace("T", " ")}\nname: ${name}\n\n` +
-    `Submit this issue as it is (times are UTC). The link is posted here when the case is ready.`;
+    `Submit this issue as it is (times are UTC). This builds the case page, the radar replay and the GR2 package; ` +
+    `their links are posted here as each is ready, and the issue closes when all are done.`;
   return `${repoURL()}/issues/new?title=${encodeURIComponent("Custom case: " + (name || pad + " " + start.slice(0, 10)))}&body=${encodeURIComponent(body)}`;
 }
 // The form takes a UTC date and 24-hour UTC times as plain text - a browser date-time picker shows
